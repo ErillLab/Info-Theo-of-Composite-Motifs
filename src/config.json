@@ -1,0 +1,13 @@
+{
+  "pop_size": 64,
+  "G": 256,
+  "gamma": 16,
+  "mut_rate": 0.005,
+  "motif_len": 6,
+  "motif_res": 5,
+  "motif_n": 1,
+  "min_mu": 0,
+  "max_mu": 0,
+  "threshold_res": 8,
+  "max_threshold": 100
+}
