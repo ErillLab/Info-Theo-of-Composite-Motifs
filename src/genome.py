@@ -5,6 +5,7 @@ import numpy as np
 import random
 import copy
 import math
+import json
 import itertools
 from Bio import motifs
 # from Bio import SeqIO
@@ -29,7 +30,9 @@ class Genome():
         self.motif_n = config_dict['motif_n']
         self.threshold_res = config_dict['threshold_res']
         self.max_threshold = config_dict['motif_len'] * 2
-        self.pseudocounts = 1  # XXX Temporarily hardcoded
+        self.min_threshold = -self.max_threshold
+        
+        self.pseudocounts = 0  # XXX Temporarily hardcoded
         self.min_mu = config_dict['min_mu']
         self.max_mu = config_dict['max_mu']
         self.min_sigma = 0.01
@@ -113,11 +116,20 @@ class Genome():
         return n_bp_for_mu + 3
     
     def get_threshold_gene_len(self):
-        n_positive_thrs_vals = self.max_threshold * self.threshold_res
-        n_negative_thrs_vals = n_positive_thrs_vals * 1
-        n_thrs_vals = n_negative_thrs_vals + n_positive_thrs_vals
-        # Required number of bp to encode the threshld value
-        return int(np.ceil(math.log(n_thrs_vals, 4)))
+        '''
+        Returns the required number of bp to encode the threshld value. If we
+        want to encode N distinct threshold values we need at least base-4-log(N)
+        digits (in base 4). That's the minimum number of bp needed (actually it's
+        the closest integer larger than that).
+        
+        `self.threshold_res` is the number of distinc threshold values within a
+        range of 1 bit.
+
+        '''
+        # The number of positive threshold values is self.max_threshold * self.threshold_res
+        # There are as many negative threshold values. Therefore, the total number
+        # of distinct threshold values is 2 * self.max_threshold * self.threshold_res.
+        return int(np.ceil(math.log(2 * self.max_threshold * self.threshold_res, 4)))
     
     def get_pwm_gene_pos(self, pwm_number):
         if pwm_number > self.motif_n or pwm_number < 1:
@@ -132,7 +144,7 @@ class Genome():
             if self.motif_n < 2:
                 raise ValueError('There are no connectors.')
             else:
-                raise ValueError('')  # XXX Define error message
+                raise ValueError('There are only {} connectors'.format(self.motif_n-1))
         # Gene coordinates
         offset = (conn_number * self.get_pwm_gene_len()) + ((conn_number - 1) * self.get_conn_gene_len())
         return (offset, offset + self.get_conn_gene_len())
@@ -186,8 +198,11 @@ class Genome():
         return Connector(mu, sigma, self.G, self.motif_len)
     
     def translate_threshold_gene(self):
-        # !!! double-check code
         thrsh = (self.nucl_seq_to_int(self.get_thrsh_gene_seq()) / self.threshold_res) - self.max_threshold
+        #return (self.nucl_seq_to_int(self.get_thrsh_gene_seq()) / self.threshold_res) + self.min_threshold
+
+        # Following code is not needed: a threshold higher than `max_threshold`
+        # would work the same way as a threshold value of exactly `max_threshold`
         if thrsh > self.max_threshold:
             return self.max_threshold
         else:
@@ -244,19 +259,32 @@ class Genome():
         
         # Shortcut for the diad case
         elif self.motif_n == 2:
-            plcm_pwm_scores = list(itertools.product(*pwm_arrays))
-            plcm_scores = []
-            plcm_pos = []
-            print('\tfor ...')
-            # XXX VECTORIZE! ...
-            for i in range(len(plcm_pwm_scores)):
-                q, r = divmod(i, self.G)
-                # The distance between the two recognizers is r - q
-                plcm_scores.append(sum(plcm_pwm_scores[i]) + self.regulator['connectors'][0].score(r - q))
-                plcm_pos.append(int((r + q + self.motif_len)/2))  # motif center
-            print('\tdone')
-            hits_indexes = np.argwhere(np.array(plcm_scores) > self.regulator['threshold']).flatten()
-            return [plcm_pos[idx] for idx in hits_indexes]
+            
+            # The distance between the two recognizers is r - q
+            # Genome is circular, so distances are ambiguous.
+            # We chose non-negative distances.
+            # [e.g., the distance between 8 (left) and 2 (right) on a genome
+            # of length 10 is 4, instead of -6]
+            # So the effective distance will be (j-i) % G, instead of j-i.
+            # [e.g., (2-8)%10 = 4, instead of 2-8 = -6]
+            _G = self.G
+            
+            #x1 = np.array([v for v in pwm_arrays[0] for rep in range(_G)])
+            x1 = np.repeat(pwm_arrays[0], _G)  # XXX BETTER
+            #x2 = np.array(list(pwm_arrays[1]) * _G)
+            x2 = np.tile(pwm_arrays[1], _G)
+            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            
+            plcm_scores = x1 + x2 + x3
+            
+            hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
+            
+            # 'position' is the placement 'center'
+            mot_len = self.motif_len
+            plcm_pos = [int((sum(divmod(idx, _G))+mot_len)/2) for idx in hits_indexes]
+            
+            return plcm_pos
+            #return [plcm_pos[idx] for idx in hits_indexes]
         
         # Code for the general case (works for any value of `motif_n`)
         else:
@@ -277,29 +305,6 @@ class Genome():
                 plcm_pos.append(int((plcm_pwm_pos[i][0] + plcm_pwm_pos[i][-1] + self.motif_len)/2))  # motif center
             hits_indexes = np.argwhere(np.array(plcm_scores) > self.regulator['threshold']).flatten()
             return [plcm_pos[idx] for idx in hits_indexes]
-        
-        
-        
-        '''
-        idx = 23
-        G = 4
-        
-        n = 3
-        r = idx
-        
-        while n > 1:
-            q, r = divmod(r, G**n)
-        
-        for plcm in all_plcm_pwm_pos:
-            score = 0
-            for i in range(len(plcm)-1):
-                score += plcm[i] + connscore[d(i)]
-            score += plcm[-1]
-        '''
-        
-    
-        # # Return hits positions
-        # return np.argwhere(scores > self.threshold).flatten()
     
     def get_fitness(self):
         hits_positions = self.scan()
@@ -307,14 +312,6 @@ class Genome():
         # Fitness is (-1) * number-of-errors
         return -(self.count_false_positives(hits_positions, targets_positions) +
                  self.count_false_negatives(hits_positions, targets_positions))
-        '''
-        # False positives
-        n_fp = self.count_false_positives(hits_positions, targets_positions)
-        # False negatives
-        n_fn = self.count_false_negatives(hits_positions, targets_positions)
-        # Fitness is (-1) * number-of-errors
-        return - (n_fp + n_fn)
-        '''
     
     def count_false_positives(self, hits_positions, targets_positions):
         # Count type_I_errors
@@ -357,12 +354,41 @@ class Genome():
         # # Re-set TF model and threshold
         # self.translate_tf()
         # self.translate_threshold_gene()
-    '''
-    INSERTIONS and DELETIONS:
-        make them compensatory (#insertions == #deletions), so that the length
-        of the genome G doesn't change. #insertions == #deletions will be drawn
-        from a Poisson, with lambda depending on the specific mutation rate.
-    '''
+    
+    
+    # ==== INDELS ====================
+    # ================================
+    
+    def insert_base(self):
+        # Randomly chose a position (outside the regulator CDS)
+        pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Update genome sequence
+        self.seq = self.seq[:pos] + random.choice(self._bases) + self.seq[pos:]
+        # Update coordinates
+        for i in range(len(self.targets)):
+            if self.targets[i] >= pos:
+                self.targets[i] += 1
+    
+    def delete_base(self):
+        # Randomly chose a position (outside the regulator CDS)
+        pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Update genome sequence
+        self.seq = self.seq[:pos] + self.seq[pos+1:]
+        # Update coordinates
+        for i in range(len(self.targets)):
+            if self.targets[i] > pos:
+                self.targets[i] -= 1
+    
+    def apply_indel(self):
+        '''
+        Apply one insertion and one deletion. In this way, the value of G
+        (the length of the genome) is preserved.
+        '''
+        self.insert_base()
+        self.delete_base()
+    
+    # ================================
+    # ================================
     
     
     def mutate_ev(self):
@@ -382,9 +408,12 @@ class Genome():
         t = self.G - (a+c+g)
         self.acgt = {'a': a, 'c': c, 'g': g, 't': t}   
     
-    def get_R_sequence(self):
+    def get_R_sequence_old(self):
+        '''
+        Older version of the function: Background frequencies are fixed at 0.25.
+        Check new version of this function: "get_R_sequence_ev".
+        '''
         target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
-        
         H = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
@@ -404,20 +433,21 @@ class Genome():
         This is the method used in "Evolution of biological information".
         '''
         target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
-        
-        H = 0
+        Rsequence = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
-            
             for base in self._bases:
                 freq = obs_bases.count(base) / self.gamma
                 if freq != 0:
                     bg_freq = self.acgt[base] / self.G
-                    H += freq * (np.log2(freq) - np.log2(bg_freq))
-        return H
+                    Rsequence += freq * (np.log2(freq) - np.log2(bg_freq))
+        return Rsequence
     
     def get_R_sequence_ev_new(self):
         '''
+        !!! Work in progress ...
+        
+        Function that takes into account small sample bias.
         As described in "Evolution of biological information".
         '''
         Hg = 0
@@ -443,9 +473,26 @@ class Genome():
     # def get_R_placement(self):
     #     return xxx
     
+    
     def max_possible_IC(self):
-        # (max recog IC * #recogs) + (max conn IC * #connectors)
         return (2 * self.motif_len * self.motif_n) + (np.log2(self.G) * (self.motif_n - 1))
+    
+    def export(self, filename):
+        with open(filename, 'w') as outfile:
+            json.dump(
+                {'seq': self.seq,
+                 'targets': self.targets,
+                 'motif_len': self.motif_len,
+                 'motif_res': self.motif_res,
+                 'motif_n': self.motif_n,
+                 'threshold_res': self.threshold_res,
+                 'min_mu': self.min_mu, 'max_mu': self.max_mu,
+                 'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
+                 'pseudocounts': self.pseudocounts}, outfile)
+
+                    
+
+                    
 
 
 

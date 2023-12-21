@@ -73,6 +73,8 @@ class Connector():
 
 
 
+
+# !!! Work in progress ...
 '''
 In genome.translate_regulator
 Add if / else before
@@ -80,7 +82,7 @@ Add if / else before
 to decide what type of connector will be appended to `conn_list`.
 '''
 class ConnectorUnif():
-    
+    # !!! Work in progress ...
     def __init__(self, min_gap, max_gap, G, motif_len):
         
         self.min_gap = min_gap
