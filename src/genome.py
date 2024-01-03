@@ -268,10 +268,7 @@ class Genome():
             # So the effective distance will be (j-i) % G, instead of j-i.
             # [e.g., (2-8)%10 = 4, instead of 2-8 = -6]
             _G = self.G
-            
-            #x1 = np.array([v for v in pwm_arrays[0] for rep in range(_G)])
-            x1 = np.repeat(pwm_arrays[0], _G)  # XXX BETTER
-            #x2 = np.array(list(pwm_arrays[1]) * _G)
+            x1 = np.repeat(pwm_arrays[0], _G)
             x2 = np.tile(pwm_arrays[1], _G)
             x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
             
@@ -281,13 +278,21 @@ class Genome():
             
             # 'position' is the placement 'center'
             mot_len = self.motif_len
-            plcm_pos = [int((sum(divmod(idx, _G))+mot_len)/2) for idx in hits_indexes]
+            
+            plcm_pos = []
+            for idx in hits_indexes:
+                left, right = divmod(idx, _G)
+                if right < left:
+                    right += _G
+                plcm_pos.append(int((left + right + mot_len)/2) % _G)
             
             return plcm_pos
-            #return [plcm_pos[idx] for idx in hits_indexes]
         
         # Code for the general case (works for any value of `motif_n`)
         else:
+            # !!! TO BE RE-CODED
+            raise ValueError('This code needs to be re-coded.')
+            
             plcm_pwm_scores = list(itertools.product(*pwm_arrays))
             plcm_pwm_pos = list(itertools.product(range(self.G), repeat=self.motif_n))
             plcm_spcr_scores = []
@@ -302,10 +307,22 @@ class Genome():
             for i in range(len(plcm_pwm_scores)):
                 # XXX Vectorize ?
                 plcm_scores.append(sum(plcm_pwm_scores[i]) + sum(plcm_spcr_scores[i]))
-                plcm_pos.append(int((plcm_pwm_pos[i][0] + plcm_pwm_pos[i][-1] + self.motif_len)/2))  # motif center
+                
+                
+                # !!! WRONG
+                plcm_pos.append(int((plcm_pwm_pos[i][0] + plcm_pwm_pos[i][-1] + self.motif_len)/2) % self.G)  # site center
+                
+                
             hits_indexes = np.argwhere(np.array(plcm_scores) > self.regulator['threshold']).flatten()
             return [plcm_pos[idx] for idx in hits_indexes]
     
+    def find_valid_plcm(self):
+        tg_plcm
+        # for loop over all the pairs that have a center == tg_plcm
+        
+        # !!! ...
+        
+
     def get_fitness(self):
         hits_positions = self.scan()
         targets_positions = self.targets
@@ -492,7 +509,6 @@ class Genome():
 
                     
 
-                    
 
 
 
