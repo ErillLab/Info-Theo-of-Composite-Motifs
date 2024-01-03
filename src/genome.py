@@ -347,7 +347,12 @@ class Genome():
     def count_false_negatives(self, hits_positions, targets_positions):
         # Count type_II_errors
         return len(set(targets_positions).difference(set(hits_positions)))
-    
+
+# ===========
+# NEW FITNESS
+# ===========
+
+
     def mutate_base(self, base_position):
         curr_base = self.seq[base_position]
         new_base = random.choice(self._bases)
