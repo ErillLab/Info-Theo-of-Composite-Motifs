@@ -325,33 +325,37 @@ class Genome():
 
     def get_fitness(self):
         hits_positions = self.scan()
-        targets_positions = self.targets
         # Fitness is (-1) * number-of-errors
-        return -(self.count_false_positives(hits_positions, targets_positions) +
-                 self.count_false_negatives(hits_positions, targets_positions))
+        return -(self.count_false_positives(hits_positions) +
+                 self.count_false_negatives(hits_positions))
     
-    def count_false_positives(self, hits_positions, targets_positions):
+    def count_false_positives(self, hits_positions):
         # Count type_I_errors
-        type_I_errors  = set(hits_positions).difference(set(targets_positions))
+        type_I_errors  = set(hits_positions).difference(set(self.targets))
         if self.motif_n == 1:
             return len(type_I_errors)
         else:
             n_fp = sum([hits_positions.count(err) for err in type_I_errors])
             # By def, there are only gamma correct placements. Enforce by counting
             # redundant placements as false positives (fp)
-            for target in targets_positions:
+            for target in self.targets:
                 if hits_positions.count(target) > 1:
                     n_fp += hits_positions.count(target) - 1
             return n_fp
     
-    def count_false_negatives(self, hits_positions, targets_positions):
+    def count_false_negatives(self, hits_positions):
         # Count type_II_errors
-        return len(set(targets_positions).difference(set(hits_positions)))
+        return len(set(self.targets).difference(set(hits_positions)))
 
 # ===========
 # NEW FITNESS
 # ===========
 
+    def get_new_fitness(self):
+        '''
+        !!! Work in progress ...
+        '''
+        return
 
     def mutate_base(self, base_position):
         curr_base = self.seq[base_position]
