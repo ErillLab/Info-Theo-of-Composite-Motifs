@@ -16,12 +16,6 @@ from genome import Genome
 
 
 
-########################################################
-# ACTIVATE NEW STOPPING CRITERION
-########################################################
-
-
-
 def read_json_file(filename):
     ''' Returns the content of a specified JSON file as a python object. '''
     with open(filename) as json_content:
@@ -67,9 +61,18 @@ def main():
     # SET UP
     
     config_filename = 'config.json'
+    config_dict = read_json_file(config_filename)
     
     run_tag = time.strftime("%Y%m%d%H%M%S")
-    config_dict = read_json_file(config_filename)
+    run_mode = config_dict['run_mode']
+    
+    # Ensure run_tag uniqueness when running in parallel
+    if run_mode == 'parallel':
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        run_tag = run_tag + '_' + str(rank)
+    
     pop_size = config_dict['pop_size']
     motif_n = config_dict['motif_n']
     update_period = config_dict['update_period']
@@ -84,6 +87,8 @@ def main():
     else:
         plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx = None, None
     
+    plcm_idx_to_gnom_pos = None  # Save memory. plcm_idx_to_gnom_pos is not used
+    
     # Initialize population
     population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
     
@@ -97,12 +102,12 @@ def main():
     best_org_Rseq_ev_list = []
     solution_gen = None
     
-    drift_time = 1000  # !!! Temporarily hardcoded
-    max_n_gen = 2000  # !!! Temporarily hardcoded
+    drift_time = config_dict['drift_time']
+    max_n_gen = config_dict['max_n_gen']
+    
     gen = 0
     
     while not end_run(gen, solution_gen, drift_time, max_n_gen):
-    #for gen in range(1000):
         
         gen += 1
         print("Gen:", gen)
@@ -130,8 +135,8 @@ def main():
             sorted_pop.append(org)
             sorted_fit.append(fitness)
         best_fitness = sorted_fit[0]
-        print('sorted_fit:', sorted_fit)
-        print('\tMax Fitness:', best_fitness)
+        # print('sorted_fit:', sorted_fit)
+        # print('\tMax Fitness:', best_fitness)
         
         # If the model is a single motif, keep track of Rseq through time
         # ---------------------------------------------------------------
@@ -201,6 +206,10 @@ def main():
             # IC report (CSV) and Gaps report (JSON)
             org.study_diad(results_dirpath + 'gen_{}'.format(gen))
             solution_gen = gen
+            
+            # Save the settings for this run
+            with open(results_dirpath + 'parameters.json', 'w') as f:
+                json.dump(config_dict, f)
     
     # Export latest solution
     if solution_gen:
@@ -210,7 +219,8 @@ def main():
         # IC report (CSV) and Gaps report (JSON)
         org.study_diad(results_dirpath + 'gen_{}'.format(gen))
     else:
-        print('No solution obtained.')
+        os.rmdir(results_dirpath)
+        print('{}: No solution obtained.'.format(results_dirpath))
 
 
 

@@ -1,4 +1,5 @@
 {
+  "run_mode": "serial",
   "pop_size": 64,
   "G": 512,
   "gamma": 4,
@@ -9,5 +10,7 @@
   "min_mu": 0,
   "max_mu": 5,
   "threshold_res": 200,
-  "update_period": 5
+  "update_period": 5,
+  "drift_time": 1000,
+  "max_n_gen": 4000
 }
