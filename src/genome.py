@@ -113,8 +113,16 @@ class Genome():
     def synthesize_genome_seq(self):
         ''' Sets the `seq` attribute. '''
         self.seq = "".join(random.choices(self._bases, k=self.G))
-        # Circular genome
-        self.seq = self.seq + self.seq[:self.motif_len-1]
+    
+    def get_seq(self):
+        '''
+        Returns the genome sequence as a string, where the first L-1 letters are
+        repeated at the end of the string (where L is the length of each PSSM).
+        In this way, the function provides an argument for the pssm.calculate
+        function such that it will return G scores, instead of only G-L+1 scores.
+        This accounts for genome circularity: PSSMs can be placed across the 'end'.
+        '''
+        return self.seq + self.seq[:self.motif_len-1]
     
     def get_pwm_gene_len(self):
         return self.motif_res * self.motif_len
@@ -270,7 +278,7 @@ class Genome():
         pwm = recog.counts.normalize(pseudocounts=self.pseudocounts)
         pssm = pwm.log_odds()
         # Scan genome
-        return pssm.calculate(self.seq)
+        return pssm.calculate(self.get_seq())
     
     def scan(self):
         '''
@@ -452,7 +460,9 @@ class Genome():
     
     def mutate_with_rate(self):
         '''
-        !!! Alternative mutation strategy, based on a mutation rate.
+        Alternative mutation strategy, based on a mutation rate. Instead of one
+        mutation per organism per generation, the number of mutations is a random
+        number that depends on the mutation rate.
         '''
         #n_mut_bases = np.random.binomial(self.G, self.mut_rate)
         n_mut_bases = int(self.G * self.mut_rate)
@@ -527,7 +537,7 @@ class Genome():
         Older version of the function: Background frequencies are fixed at 0.25.
         Check new version of this function: "get_R_sequence_ev".
         '''
-        target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
+        target_sequences = [self.get_seq()[pos:pos+self.motif_len] for pos in self.targets]
         H = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
@@ -546,7 +556,7 @@ class Genome():
         Nucleotide Sequences" Schneider, Stormo, Gold, Ehrenfeucht.
         This is the method used in "Evolution of biological information".
         '''
-        target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
+        target_sequences = [self.get_seq()[pos:pos+self.motif_len] for pos in self.targets]
         Rsequence = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
@@ -599,6 +609,8 @@ class Genome():
         `outfilepath` is not specified, a python dictionary is returned, instead.
         '''
         out_dict = {'seq': self.seq,
+                    'G': self.G,
+                    'gamma': self.gamma,
                     'targets': self.targets,
                     'motif_len': self.motif_len,
                     'motif_res': self.motif_res,
@@ -681,7 +693,7 @@ class Genome():
         
         # Genome sequence
         # ---------------
-        out_string += self.seq[:self.G] + '\n'
+        out_string += self.seq + '\n'
         
         # Annotate hits placements
         # ------------------------
@@ -784,11 +796,11 @@ class Genome():
         
         # PWM1 binding sites
         pwm1_tg_pos = [e[0] for e in elements_pos]
-        pwm1_tg_seq = [self.seq[pos:pos+L] for pos in pwm1_tg_pos]
+        pwm1_tg_seq = [self.get_seq()[pos:pos+L] for pos in pwm1_tg_pos]
         
         # PWM2 binding sites
         pwm2_tg_pos = [e[1] for e in elements_pos]
-        pwm2_tg_seq = [self.seq[pos:pos+L] for pos in pwm2_tg_pos]
+        pwm2_tg_seq = [self.get_seq()[pos:pos+L] for pos in pwm2_tg_pos]
         
         # R_sequence
         
