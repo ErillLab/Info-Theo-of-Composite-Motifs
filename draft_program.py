@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import cProfile
-import time
-
 import random
 import numpy as np
 import json
@@ -14,168 +11,133 @@ from genome import Genome
 from expected_entropy import expected_entropy
 
 
+config_filename = 'config.json'
+
 
 def read_json_file(filename):
-    ''' Returns the content of a specified JSON file as a python object. '''
     with open(filename) as json_content:
         return json.load(json_content)
 
-def generate_diad_plcm_map(config_dict):
-    # Map diad placement indexes to genomic position of centroid
-    G = config_dict['G']
-    mot_len = config_dict['motif_len']
-    plcm_idx_to_gnom_pos = []
-    gnom_pos_to_plcm_idx = [[] for i in range(G)]
-    for idx in range(G**2):
-        x, y = divmod(idx, G)
-        if y < x:
-            y += G
-        # Genome position (centroid)
-        pos = int((x + y + mot_len)/2) % G
-        plcm_idx_to_gnom_pos.append(pos)
-        gnom_pos_to_plcm_idx[pos].append(idx)
-    return plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx
+config_dict = read_json_file(config_filename)
 
-def reproduce(organisms):
-    '''
-    The Genome objects in `organisms` (a list) are cloned, and a the clones
-    (a list) are returned.
-    '''
-    return [Genome(clone=parent) for parent in organisms]
+
+run_tag = time.strftime("%Y%m%d%H%M%S")
+
+pop_size = config_dict['pop_size']
+
+# population = []
+# for i in range(pop_size):
+#     new_genome = Genome(config_dict)
+#     population.append(new_genome)
+population = [Genome(config_dict) for i in range(pop_size)]
+
+motif_n = config_dict['motif_n']
+
+update_period = 1
 
 # =============================================================================
-#     Ev-LIKE METHOD
+#     ORIGINAL METHOD
 # =============================================================================
 
 
-def main():
+
+
+min_Rseq_list = []
+avg_Rseq_list = []
+max_Rseq_list = []
+best_org_Rseq_list = []
+best_org_Rseq_ev_list = []
+
+for gen in range(20000):
+    print("Gen:", gen)
     
-    # SET UP
-    
-    config_filename = 'config.json'
-    
-    run_tag = time.strftime("%Y%m%d%H%M%S")
-    config_dict = read_json_file(config_filename)
-    pop_size = config_dict['pop_size']
-    motif_n = config_dict['motif_n']
-    update_period = config_dict['update_period']
+    # XXX Avoid second-order selection
+    random.shuffle(population)
     
     
-    if motif_n == 2:
-        # Map diad placement indexes to genomic position of centroid
-        plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)
+    fitness_list = []
+    R_seq_list = []
+    
+    # Mutation and fitness evaluation
+    # -------------------------------
+    for org in population:
+        #org.mutate_with_rate()
+        org.mutate_ev()
+        ##################################################################
+        fitness_list.append(org.get_fitness())
+    
+    ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
+    
+    # sorted_pop = [org for _, org in ranking]
+    sorted_pop = []
+    sorted_fit = []
+    for fitness, org in ranking:
+        sorted_pop.append(org)
+        sorted_fit.append(fitness)
+    print('sorted_fit:', sorted_fit)
+    
+    best_fitness = sorted_fit[0]
+    
+    if motif_n == 1:
+        R_seq_list = [org.get_R_sequence_ev() for org in sorted_pop]
+        
+        # XXX OPTIMIZE THIS CODE! ------------------------
+        '''
+        for idx in range(len(sorted_pop)):
+            if sorted_fit[idx] != best_fitness:
+                break
+        '''
+        rev_idx = sorted_fit[::-1].index(best_fitness)
+        if rev_idx == 0:
+            # all organisms are 'best organism'
+            best_organisms_R_seq = R_seq_list[:]
+        else:
+            best_organisms_R_seq = R_seq_list[:-rev_idx]    
+    
+    print('\tMax Fitness:', best_fitness)
+    print('\tAvg Fitness:', np.array(fitness_list).mean())
+    if motif_n == 1:
+        print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
+        print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
+        print('\tR_frequency:\t', org.get_R_frequency())
+    
+        if gen % update_period == 0:
+            min_Rseq_list.append(np.array(R_seq_list).min())
+            avg_Rseq_list.append(np.array(R_seq_list).mean())
+            max_Rseq_list.append(np.array(R_seq_list).max())
+            best_org_Rseq_list.append(np.array(best_organisms_R_seq).mean())
+            best_org_Rseq_ev_list.append(R_seq_list[0])
+    
+    # Selection
+    # ---------
+    middle = pop_size//2
+    good, bad = sorted_pop[:middle], sorted_pop[middle:]
+    
+    if sorted_fit[middle-1] == sorted_fit[middle]:
+        tie_fit_val = sorted_fit[middle]
+        # XXX OPTIMIZE THIS CODE! ------------------------
+        n_in_good = 0
+        n_in_bad = 0
+        for fitness in sorted_fit[middle:]:
+            if fitness != tie_fit_val:
+                break
+            n_in_bad += 1
+
+        for fitness in sorted_fit[::-1][middle:]:
+            if fitness != tie_fit_val:
+                break
+            n_in_good += 1
+        # ------------------------------------------------
+        n_ties = min(n_in_good, n_in_bad)
     else:
-        plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx = None, None
+        n_ties = 0
     
-    # Initialize population
-    population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
-    
-    
-    # START
-    
-    min_Rseq_list = []
-    avg_Rseq_list = []
-    max_Rseq_list = []
-    best_org_Rseq_list = []
-    best_org_Rseq_ev_list = []
-    
-    for gen in range(500):
-        print("Gen:", gen)
-        
-        # Avoid second-order selection towards higher IC than necessary
-        random.shuffle(population)
-        
-        fitness_list = []
-        R_seq_list = []
-        
-        # Mutation and fitness evaluation
-        # -------------------------------
-        for org in population:
-            #org.mutate_with_rate()
-            org.mutate_ev()
-            #fitness_list.append(org.get_fitness())
-            fitness_list.append(org.get_fitness_new())  # !!!
-        
-        # Sort population based on fitness (descending: from best to worst)
-        ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
-        
-        sorted_pop = []
-        sorted_fit = []
-        for fitness, org in ranking:
-            sorted_pop.append(org)
-            sorted_fit.append(fitness)
-        best_fitness = sorted_fit[0]
-        print('sorted_fit:', sorted_fit)
-        
-        print('\tMax Fitness:', best_fitness)
-        #print('\tAvg Fitness:', np.array(fitness_list).mean())
-        
-        # If the model is a single motif, keep track of Rseq through time
-        # ---------------------------------------------------------------
-        if motif_n == 1:
-            R_seq_list = [org.get_R_sequence_ev() for org in sorted_pop]
-            
-            # R_seq of all the organisms with best fitness: `best_organisms_R_seq`
-            
-            # Index of the last organism that has fitness equal to `best_fitness`
-            rev_idx = sorted_fit[::-1].index(best_fitness)
-            if rev_idx == 0:
-                # all organisms are 'best organism'
-                best_organisms_R_seq = R_seq_list[:]
-            else:
-                best_organisms_R_seq = R_seq_list[:-rev_idx]
-            
-            print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
-            print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
-            print('\tR_frequency:\t', org.get_R_frequency())
-        
-            if gen % update_period == 0:
-                min_Rseq_list.append(np.array(R_seq_list).min())
-                avg_Rseq_list.append(np.array(R_seq_list).mean())
-                max_Rseq_list.append(np.array(R_seq_list).max())
-                best_org_Rseq_list.append(np.array(best_organisms_R_seq).mean())
-                best_org_Rseq_ev_list.append(R_seq_list[0])
-        
-        # Selection
-        # ---------
-        middle = pop_size//2
-        good, bad = sorted_pop[:middle], sorted_pop[middle:]
-        
-        # Number of ties
-        if sorted_fit[middle-1] == sorted_fit[middle]:
-            tie_fit_val = sorted_fit[middle]
-            # XXX OPTIMIZE THIS CODE! ------------------------
-            n_in_good = 0
-            n_in_bad = 0
-            for fitness in sorted_fit[middle:]:
-                if fitness != tie_fit_val:
-                    break
-                n_in_bad += 1
-    
-            for fitness in sorted_fit[::-1][middle:]:
-                if fitness != tie_fit_val:
-                    break
-                n_in_good += 1
-            # ------------------------------------------------
-            n_ties = min(n_in_good, n_in_bad)
-        else:
-            n_ties = 0
-        
-                
-        # Replacement of bad organisms with good organisms
-        if n_ties == 0:
-            #population = good + copy.deepcopy(good)
-            population = good + reproduce(good)
-        else:
-            #population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
-            population = good + reproduce(good[:-n_ties]) + bad[:n_ties]
-
-
-if __name__ == '__main__':
-    
-    cProfile.run('main()', sort='tottime')
-
-
+    # Replacement
+    if n_ties == 0:
+        population = good + copy.deepcopy(good)
+    else:
+        population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
+    #population = sorted_pop[middle + n_ties:] + bad[-n_ties:] + sorted_pop[middle:]
 
 
 # To numpy arrays
@@ -267,12 +229,6 @@ plt.close()
 # STUDY DIADS
 # ===========
 
-fl = []
-for org in population:
-    fl.append(org.get_fitness_new())
-
-fitness_list
-
 
 import itertools
 
@@ -285,18 +241,15 @@ def study_diad(org):
     plcm_pos = []
     pwms_pos = []
     for i in range(len(plcm_pwm_scores)):
-        left, right = divmod(i, org.G)
-        pwms_pos.append((left, right))
-        # The distance between the two recognizers is right - left
+        q, r = divmod(i, org.G)
+        pwms_pos.append((q, r))
+        # The distance between the two recognizers is r - q
         # Genome is circular, so distances are ambiguous.
         # We chose non-negative distances.
         # (e.g. the distance between 8 and 2 on a genome of length 10 is 4, instead of -6)
-        # So the effective distance will be (right-left) % G, instead of r-q.
-        plcm_scores.append(sum(plcm_pwm_scores[i]) +
-                           org.regulator['connectors'][0].score((right - left) % org.G))
-        if right < left:
-            right += org.G
-        plcm_pos.append(int((left + right + org.motif_len)/2) % org.G)  # motif center
+        # So the effective distance will be (r-q) % G, instead of r-q.
+        plcm_scores.append(sum(plcm_pwm_scores[i]) + org.regulator['connectors'][0].score((r - q) % org.G))
+        plcm_pos.append(int((r + q + org.motif_len)/2))  # motif center
     hits_indexes = np.argwhere(np.array(plcm_scores) > org.regulator['threshold']).flatten()
     hits = [plcm_pos[idx] for idx in hits_indexes]
     elements_pos = [pwms_pos[idx] for idx in hits_indexes]
@@ -348,7 +301,7 @@ def study_diad(org):
     # Rspacer
     gaps = []
     for l, r in elements_pos:
-        distance = (r - l) % org.G
+        distance = r - l
         gap = distance - org.motif_len
         gaps.append(gap)
     print('gaps:', gaps)
@@ -516,13 +469,6 @@ plt.close()
 
 
 
-#
-
-
-
-
-
-"""
 
 
 

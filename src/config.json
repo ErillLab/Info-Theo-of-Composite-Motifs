@@ -1,13 +1,16 @@
 {
-  "pop_size": 8,
-  "G": 2048,
-  "gamma": 2,
+  "run_mode": "serial",
+  "pop_size": 64,
+  "G": 256,
+  "gamma": 8,
   "mut_rate": 0.005,
-  "motif_len": 4,
+  "motif_len": 5,
   "motif_res": 10,
   "motif_n": 2,
   "min_mu": 0,
   "max_mu": 5,
   "threshold_res": 200,
-  "update_period": 5
+  "update_period": null,
+  "drift_time": 1000,
+  "max_n_gen": 40000
 }

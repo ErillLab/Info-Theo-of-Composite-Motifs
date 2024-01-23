@@ -6,20 +6,27 @@ import random
 import copy
 import math
 import json
-import itertools
+# import itertools
+import collections
+import pandas as pd
 from Bio import motifs
-# from Bio import SeqIO
-# from Bio.Seq import Seq
 
 from connector import Connector
-
+from expected_entropy import expected_entropy
 
 
 
 
 class Genome():
     
-    def __init__(self, config_dict):
+    def __init__(self, config_dict=None, diad_plcm_map=None, clone=None):
+        
+        if clone is None:
+            self.non_copy_constructor(config_dict, diad_plcm_map)
+        else:
+            self.copy_constructor(clone)
+    
+    def non_copy_constructor(self, config_dict, diad_plcm_map):
         
         # Set parameters from config file
         self.G = config_dict['G']
@@ -32,42 +39,34 @@ class Genome():
         self.max_threshold = config_dict['motif_len'] * 2
         self.min_threshold = -self.max_threshold
         
-        self.pseudocounts = 0  # XXX Temporarily hardcoded
+        if self.motif_n == 2:
+            if diad_plcm_map is None:
+                raise ValueError("A 'diad_plcm_map' list must be passed.")
+            elif not type(diad_plcm_map) is list:
+                raise ValueError("diad_plcm_map must be a list.")
+            else:
+                self._diad_plcm_map = diad_plcm_map
+        
+        self.pseudocounts = 0.01  # XXX Temporarily hardcoded
         self.min_mu = config_dict['min_mu']
         self.max_mu = config_dict['max_mu']
         self.min_sigma = 0.01
         self.max_sigma = self.G * 2  # Approximates a uniform over the genome
         
-        self._sigma_vals = np.logspace(np.log2(self.min_sigma), np.log2(self.max_sigma), base=2, num=64)
+        self._sigma_vals = np.logspace(
+            np.log2(self.min_sigma), np.log2(self.max_sigma), base=2, num=64)
         
         self.seq = None
         self.regulator = None
         self.threshold = None
         self.acgt = None
         
-        # XXX Move to `biochem` file and import biochem?
         self._bases = ['a', 'c', 'g', 't']
-        self._mut_dict = {'a':['c', 'g', 't'], 'c':['a', 'g', 't'], 'g':['a', 'c', 't'], 't':['a', 'c', 'g']}
         self._nucl_to_int = {'a': 0, 'c': 1, 'g': 2, 't': 3}
         
         # Set seq
         self.synthesize_genome_seq()
         self.set_acgt_content()
-        
-        
-        '''
-        # Define TF gene
-        self.tf_gene_len = self.motif_res * self.motif_len
-        self.tf_gene_loc = {'start': 0, 
-                            'end': self.tf_gene_len}
-        
-        # Define threshold gene(s)
-        self.threshold_gene_len = None
-        self.set_threshold_gene_len()
-        
-        self.threshold_gene_loc = {'start': self.tf_gene_len,
-                                   'end': self.tf_gene_len + self.threshold_gene_len}
-        '''
         
         # Set target sites
         self.targets = None
@@ -76,31 +75,54 @@ class Genome():
         # !!!
         self.translate_regulator()
     
-    # !!!
-    '''
-    def set_genes(self):
-        for i in range(self.motif_n):
-            pwm_name = 'pwm_' + str(i+1)
-            self.genes[pwm_name] = {'start': self.first_non_cd_pos,
-                                      'stop': self.first_non_cd_pos + self.get_pwm_gene_len()}
-            # Update first non-coding position
-            self.first_non_cd_pos = self.genes[pwm_name]['stop']
-            
-            conn_name = 'connector_' + str(i+1)
-            self.genes[conn_name] = {'start': self.genes[pwm_name]['stop'],
-                                      'stop': self.genes[pwm_name]['stop'] + self.get_conn_gene_len()}
-            
+    def copy_constructor(self, parent):
         
-        # !!!
-        # Gene for the threshold
-        self.genes['threshold'] = {'start': self.first_non_cd_pos,
-                                    'stop': self.first_non_cd_pos + self.get_threshold_gene_len()}
-    '''
+        # Set parameters from parent
+        self.G = parent.G
+        self.gamma = parent.gamma
+        self.mut_rate = parent.mut_rate
+        self.motif_len = parent.motif_len
+        self.motif_res = parent.motif_res
+        self.motif_n = parent.motif_n
+        self.threshold_res = parent.threshold_res
+        self.max_threshold = parent.max_threshold
+        self.min_threshold = parent.min_threshold
+        
+        if self.motif_n == 2:
+            self._diad_plcm_map = parent._diad_plcm_map
+        
+        self.pseudocounts = parent.pseudocounts
+        self.min_mu = parent.min_mu
+        self.max_mu = parent.max_mu
+        self.min_sigma = parent.min_sigma
+        self.max_sigma = parent.max_sigma
+        
+        self._sigma_vals = copy.deepcopy(parent._sigma_vals)
+        
+        self.seq = parent.seq
+        self.regulator = copy.deepcopy(parent.regulator)
+        self.threshold = parent.threshold
+        self.acgt = copy.deepcopy(parent.acgt)
+        
+        self._bases = parent._bases[:]
+        self._nucl_to_int = copy.deepcopy(parent._nucl_to_int)
+        
+        self.targets = parent.targets[:]
+        
     
     def synthesize_genome_seq(self):
+        ''' Sets the `seq` attribute. '''
         self.seq = "".join(random.choices(self._bases, k=self.G))
-        # Circular genome
-        self.seq = self.seq + self.seq[:self.motif_len-1]
+    
+    def get_seq(self):
+        '''
+        Returns the genome sequence as a string, where the first L-1 letters are
+        repeated at the end of the string (where L is the length of each PSSM).
+        In this way, the function provides an argument for the pssm.calculate
+        function such that it will return G scores, instead of only G-L+1 scores.
+        This accounts for genome circularity: PSSMs can be placed across the 'end'.
+        '''
+        return self.seq + self.seq[:self.motif_len-1]
     
     def get_pwm_gene_len(self):
         return self.motif_res * self.motif_len
@@ -209,6 +231,7 @@ class Genome():
             return thrsh
     
     def translate_regulator(self):
+        ''' Sets the `regulator` attribute. '''
         recog_list = []
         conn_list = []
         for i in range(self.motif_n - 1):
@@ -224,6 +247,7 @@ class Genome():
         self.regulator = {'recognizers': recog_list, 'connectors': conn_list, 'threshold': threshold}
     
     def set_targets(self):
+        ''' Sets the `targets` attribute. '''
         # Avoid setting targets within the coding sequences (the first part of the genome)
         end_CDS = self.get_non_coding_start_pos()
         # Avoid overlapping sites
@@ -235,6 +259,12 @@ class Genome():
         self.targets = tmp
     
     def nucl_seq_to_int(self, nucl_seq):
+        '''
+        Turns DNA sequences into unique integers. The integer is read as base-4
+        number, where the digits from 0 to 3 are the four nucleotide letters.
+        `nucl_seq`: a string.
+        Returns: an integer.
+        '''
         nucl_to_int_dict = self._nucl_to_int
         number_base_four = nucl_seq[:]
         for key in nucl_to_int_dict.keys():
@@ -248,9 +278,12 @@ class Genome():
         pwm = recog.counts.normalize(pseudocounts=self.pseudocounts)
         pssm = pwm.log_odds()
         # Scan genome
-        return pssm.calculate(self.seq)
+        return pssm.calculate(self.get_seq())
     
     def scan(self):
+        '''
+        !!! Obsolete function.
+        '''
         pwm_arrays = [self.pwm_scan(i+1) for i in range(self.motif_n)]
         
         # Shortcut for the single motif case
@@ -291,64 +324,140 @@ class Genome():
         # Code for the general case (works for any value of `motif_n`)
         else:
             # !!! TO BE RE-CODED
+            
+            # plcm_pwm_scores = list(itertools.product(*pwm_arrays))
+            # plcm_pwm_pos = list(itertools.product(range(self.G), repeat=self.motif_n))
+            # plcm_spcr_scores = []
+            
+            # for plcm in plcm_pwm_pos:
+            #     distances = [t - s for s, t in zip(plcm, plcm[1:])]
+            #     connscores = [self.regulator['connectors'][i].score(distances[i]) for i in range(len(distances))]
+            #     plcm_spcr_scores.append(connscores)
+            
+            # plcm_scores = []
+            # plcm_pos = []
+            # for i in range(len(plcm_pwm_scores)):
+            #     plcm_scores.append(sum(plcm_pwm_scores[i]) + sum(plcm_spcr_scores[i]))
+                
+                
+            #     # !!! WRONG
+            #     plcm_pos.append(int((plcm_pwm_pos[i][0] + plcm_pwm_pos[i][-1] + self.motif_len)/2) % self.G)  # site center
+                
+                
+            # hits_indexes = np.argwhere(np.array(plcm_scores) > self.regulator['threshold']).flatten()
+            # return [plcm_pos[idx] for idx in hits_indexes]
             raise ValueError('This code needs to be re-coded.')
-            
-            plcm_pwm_scores = list(itertools.product(*pwm_arrays))
-            plcm_pwm_pos = list(itertools.product(range(self.G), repeat=self.motif_n))
-            plcm_spcr_scores = []
-            
-            for plcm in plcm_pwm_pos:
-                distances = [t - s for s, t in zip(plcm, plcm[1:])]
-                connscores = [self.regulator['connectors'][i].score(distances[i]) for i in range(len(distances))]
-                plcm_spcr_scores.append(connscores)
-            
-            plcm_scores = []
-            plcm_pos = []
-            for i in range(len(plcm_pwm_scores)):
-                # XXX Vectorize ?
-                plcm_scores.append(sum(plcm_pwm_scores[i]) + sum(plcm_spcr_scores[i]))
-                
-                
-                # !!! WRONG
-                plcm_pos.append(int((plcm_pwm_pos[i][0] + plcm_pwm_pos[i][-1] + self.motif_len)/2) % self.G)  # site center
-                
-                
-            hits_indexes = np.argwhere(np.array(plcm_scores) > self.regulator['threshold']).flatten()
-            return [plcm_pos[idx] for idx in hits_indexes]
-    
-    def find_valid_plcm(self):
-        tg_plcm
-        # for loop over all the pairs that have a center == tg_plcm
-        
-        # !!! ...
-        
 
     def get_fitness(self):
         hits_positions = self.scan()
-        targets_positions = self.targets
         # Fitness is (-1) * number-of-errors
-        return -(self.count_false_positives(hits_positions, targets_positions) +
-                 self.count_false_negatives(hits_positions, targets_positions))
+        return -(self.count_false_positives(hits_positions) +
+                 self.count_false_negatives(hits_positions))
     
-    def count_false_positives(self, hits_positions, targets_positions):
+    def count_false_positives(self, hits_positions):
         # Count type_I_errors
-        type_I_errors  = set(hits_positions).difference(set(targets_positions))
+        type_I_errors  = set(hits_positions).difference(set(self.targets))
         if self.motif_n == 1:
             return len(type_I_errors)
         else:
             n_fp = sum([hits_positions.count(err) for err in type_I_errors])
             # By def, there are only gamma correct placements. Enforce by counting
             # redundant placements as false positives (fp)
-            for target in targets_positions:
+            for target in self.targets:
                 if hits_positions.count(target) > 1:
                     n_fp += hits_positions.count(target) - 1
             return n_fp
     
-    def count_false_negatives(self, hits_positions, targets_positions):
+    def count_false_negatives(self, hits_positions):
         # Count type_II_errors
-        return len(set(targets_positions).difference(set(hits_positions)))
+        return len(set(self.targets).difference(set(hits_positions)))
+    
+    # ===========
+    # NEW FITNESS
+    # ===========
+    
+    def get_fitness_new(self):
+        '''
+        !!! Work in progress ...
+        '''
+        
+        # Scan genome
+        # -----------
+        
+        pwm_arrays = [self.pwm_scan(i+1) for i in range(self.motif_n)]
+        
+        # Single motif case
+        if self.motif_n == 1:
+            
+            # Define `hits_positions`
+            # -----------------------
+            hits_positions =  list(np.argwhere(pwm_arrays[0] > self.regulator['threshold']).flatten())
+            
+            # Calculate fitness
+            # -----------------
+            return -(self.count_false_positives(hits_positions) +
+                     self.count_false_negatives(hits_positions))
+        
+        # Diad case
+        elif self.motif_n == 2:
+            
+            # Define `hits_positions`
+            # -----------------------
+            
+            # The distance between the two recognizers is r - q
+            # Genome is circular, so distances are ambiguous.
+            # We chose non-negative distances. [e.g., the distance between
+            # 8 (left) and 2 (right) on a genome of length 10 is 4, instead of -6]
+            # So the effective distance will be (j-i) % G, instead of j-i.
+            # [e.g., (2-8)%10 = 4, instead of 2-8 = -6]
+            _G = self.G
+            x1 = np.repeat(pwm_arrays[0], _G)
+            x2 = np.tile(pwm_arrays[1], _G)
+            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            
+            plcm_scores = x1 + x2 + x3
+            
+            hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
+            
+            # 'position' is the placement 'center'
+            hits_positions = []
+            for idx in hits_indexes:
+                left, right = divmod(idx, _G)
+                if right < left:
+                    right += _G
+                hits_positions.append(int((left + right + self.motif_len)/2) % _G)
+            
+            # Calculate fitness
+            # -----------------
+            
+            # False Positives penalty (penalty is 1 per FP)
+            fp_penalty = self.count_false_positives(hits_positions)
+            
+            # False Negatives penalty (penalty is between 0 and 1 per FN)
+            fn_penalty = 0
+            tr = self.regulator['threshold']
+            # Candidate placements on targets
+            for missed_target in list(set(self.targets).difference(set(hits_positions))):
+                # Maximum score among the placements that map onto that genomic position
+                ms = max(map(plcm_scores.__getitem__, self._diad_plcm_map[missed_target]))
+                # Penalty function. d = threshold - ms. Therefore, e^-d = e^(ms-threshold)
+                fn_penalty += (2 / (1+np.exp(ms-tr))) - 1
+                
+                # Extra penalty
+                fn_penalty += 3.1  # !!!
+                
+                # XXX
+                # Alternative penalty
+                # fn_penalty += (tr-ms)/(tr-ms+1)
+            
+            return -(fp_penalty + fn_penalty)
+        
+        # Code for the general case (works for any value of `motif_n`)
+        else:
+            raise ValueError('This code needs to be re-coded.')
     
     def mutate_base(self, base_position):
+        ''' Point mutation of a randomly chosen nucleotide. '''
         curr_base = self.seq[base_position]
         new_base = random.choice(self._bases)
         self.seq = self.seq[:base_position] + new_base + self.seq[base_position+1:]
@@ -357,50 +466,57 @@ class Genome():
         self.acgt[new_base] += 1
     
     def mutate_with_rate(self):
-        # !!!
+        '''
+        Alternative mutation strategy, based on a mutation rate. Instead of one
+        mutation per organism per generation, the number of mutations is a random
+        number that depends on the mutation rate.
+        '''
         #n_mut_bases = np.random.binomial(self.G, self.mut_rate)
         n_mut_bases = int(self.G * self.mut_rate)
         if n_mut_bases > 0:
             mut_bases_positions = random.sample(range(self.G), k=n_mut_bases)
             for pos in mut_bases_positions:
                 self.mutate_base(pos)
-            # !!!
+            
             if min(mut_bases_positions) < self.get_non_coding_start_pos():
                 self.translate_regulator()
-        
-        # # Re-set TF model and threshold
-        # self.translate_tf()
-        # self.translate_threshold_gene()
-    
     
     # ==== INDELS ====================
     # ================================
     
     def insert_base(self):
-        # Randomly chose a position (outside the regulator CDS)
+        ''' Inserts a random nucleotide. '''
+        # Randomly choose a position (outside the regulator CDS)
         pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Randomly choose a base
+        base = random.choice(self._bases)
         # Update genome sequence
-        self.seq = self.seq[:pos] + random.choice(self._bases) + self.seq[pos:]
+        self.seq = self.seq[:pos] + base + self.seq[pos:]
         # Update coordinates
         for i in range(len(self.targets)):
             if self.targets[i] >= pos:
                 self.targets[i] += 1
+        # Update ACGT content
+        self.acgt[base] += 1
     
     def delete_base(self):
+        ''' Deletes a random nucleotide. '''
         # Randomly chose a position (outside the regulator CDS)
         pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Targeted base
+        base = self.seq[pos]
         # Update genome sequence
         self.seq = self.seq[:pos] + self.seq[pos+1:]
         # Update coordinates
         for i in range(len(self.targets)):
             if self.targets[i] > pos:
                 self.targets[i] -= 1
+        # Update ACGT content
+        self.acgt[base] -= 1
     
     def apply_indel(self):
-        '''
-        Apply one insertion and one deletion. In this way, the value of G
-        (the length of the genome) is preserved.
-        '''
+        ''' Applies one insertion and one deletion. In this way, the value of G
+        (the length of the genome) is preserved. '''
         self.insert_base()
         self.delete_base()
     
@@ -415,10 +531,8 @@ class Genome():
         if rnd_pos < self.get_non_coding_start_pos():
             self.translate_regulator()
     
-    def replicate(self):
-        return copy.deepcopy(self)
-    
     def set_acgt_content(self, both_strands=False):
+        ''' Sets the `acgt` attribute. '''
         a = self.seq.count('a')
         c = self.seq.count('c')
         g = self.seq.count('g')
@@ -430,7 +544,7 @@ class Genome():
         Older version of the function: Background frequencies are fixed at 0.25.
         Check new version of this function: "get_R_sequence_ev".
         '''
-        target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
+        target_sequences = [self.get_seq()[pos:pos+self.motif_len] for pos in self.targets]
         H = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
@@ -449,7 +563,7 @@ class Genome():
         Nucleotide Sequences" Schneider, Stormo, Gold, Ehrenfeucht.
         This is the method used in "Evolution of biological information".
         '''
-        target_sequences = [self.seq[pos:pos+self.motif_len] for pos in self.targets]
+        target_sequences = [self.get_seq()[pos:pos+self.motif_len] for pos in self.targets]
         Rsequence = 0
         for i in range(self.motif_len):
             obs_bases = [target_seq[i] for target_seq in target_sequences]
@@ -492,20 +606,290 @@ class Genome():
     
     
     def max_possible_IC(self):
+        ''' Maximum information possible for the (composite) motif of the regulator,
+        i.e., 2L*number_of_PSSMs + log2(G)*number_of_spacers. '''
         return (2 * self.motif_len * self.motif_n) + (np.log2(self.G) * (self.motif_n - 1))
     
-    def export(self, filename):
-        with open(filename, 'w') as outfile:
-            json.dump(
-                {'seq': self.seq,
-                 'targets': self.targets,
-                 'motif_len': self.motif_len,
-                 'motif_res': self.motif_res,
-                 'motif_n': self.motif_n,
-                 'threshold_res': self.threshold_res,
-                 'min_mu': self.min_mu, 'max_mu': self.max_mu,
-                 'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
-                 'pseudocounts': self.pseudocounts}, outfile)
+    def export(self, outfilepath=None):
+        '''
+        Exports the organism as a JSON file. If the path of the output file
+        `outfilepath` is not specified, a python dictionary is returned, instead.
+        '''
+        out_dict = {'seq': self.seq,
+                    'G': self.G,
+                    'gamma': self.gamma,
+                    'targets': self.targets,
+                    'motif_len': self.motif_len,
+                    'motif_res': self.motif_res,
+                    'motif_n': self.motif_n,
+                    'threshold_res': self.threshold_res,
+                    'min_mu': self.min_mu, 'max_mu': self.max_mu,
+                    'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
+                    'pseudocounts': self.pseudocounts}
+        if outfilepath:
+            with open(outfilepath, 'w') as f:
+                json.dump(out_dict, f)
+        else:
+            return out_dict
+    
+    
+    
+    def _get_gene_string(self, name, length):
+        ''' Called by `print_genome_map`. Returns a string of the given length
+        that represents a gene as a name followed by an arrow. '''
+        name += '-' * (length - len(name))
+        return name[:length-1] + '>'
+    
+    def _add_diad_plcm_line(self, outlist, elements_pos, elements_idx):
+        ''' Called by `print_genome_map`.
+        !!! ... complete documentation ...
+        '''
+        leftovers = []
+        leftovers_idx = []
+        for i in range(len(elements_pos)):
+            l, r = elements_pos[i]
+            idx = elements_idx[i]
+            if (outlist[l:l+self.motif_len] != [' '] * self.motif_len or
+                outlist[r:r+self.motif_len] != [' '] * self.motif_len):
+                leftovers.append((l,r))
+                leftovers_idx.append(idx)
+            else:
+                outlist[l:l+self.motif_len] = [str(idx+1)] + ['L'] * (self.motif_len - len(str(idx+1)))
+                outlist[r:r+self.motif_len] = [str(idx+1)] + ['R'] * (self.motif_len - len(str(idx+1)))
+        return outlist, leftovers, leftovers_idx
+    
+    def print_genome_map(self, outfilepath=None):
+        '''
+        Prints the genome map to standard output and, if specified, it writes it
+        into an output file with path `outfilepath`. The map includes the location
+        of genes and target positions for transcriptional regulation, as well as
+        the actual binding positions of the encoded transcriptional regulator.
+        '''
+        # Annotate genes
+        # --------------
+        out_string = ''
+        prev_stop = 0
+        for i in range(self.motif_n):
+            # Print PWM gene
+            start, stop = self.get_pwm_gene_pos(i+1)
+            if start != prev_stop:
+                raise ValueError('Inconsistent gene map.')            
+            out_string += self._get_gene_string('PWM' + str(i+1), stop - start)
+            prev_stop = stop
+            # Print Connector gene
+            if i+1 > self.motif_n-1:
+                break
+            start, stop = self.get_conn_gene_pos(i+1)
+            if start != prev_stop:
+                raise ValueError('Inconsistent gene map.')
+            out_string += self._get_gene_string('CON' + str(i+1), stop - start)
+            prev_stop = stop
+        # Print Threshold gene
+        start, stop = self.get_threshold_gene_pos()
+        if start != prev_stop:
+            raise ValueError('Inconsistent gene map.')
+        out_string += self._get_gene_string('THRS', stop - start)
+        prev_stop = stop
+        
+        # Annotate targets
+        # ----------------
+        for i, pos in enumerate(self.targets):
+            out_string += ' ' * (pos - prev_stop) + str(i+1)
+            prev_stop = pos + len(str(i+1))
+        out_string += ' ' * (self.G - prev_stop) + '\n'
+        
+        # Genome sequence
+        # ---------------
+        out_string += self.seq + '\n'
+        
+        # Annotate hits placements
+        # ------------------------
+        pwm_arrays = [self.pwm_scan(i+1) for i in range(self.motif_n)]
+        
+        # Shortcut for the single motif case
+        if self.motif_n == 1:
+            hits_positions = list(np.argwhere(pwm_arrays[0] > self.regulator['threshold']).flatten())
+        
+        # Shortcut for the diad case
+        elif self.motif_n == 2:
+            
+            # The distance between the two recognizers is r - q
+            # Genome is circular, so distances are ambiguous.
+            # We chose non-negative distances.
+            # [e.g., the distance between 8 (left) and 2 (right) on a genome
+            # of length 10 is 4, instead of -6]
+            # So the effective distance will be (j-i) % G, instead of j-i.
+            # [e.g., (2-8)%10 = 4, instead of 2-8 = -6]
+            _G = self.G
+            x1 = np.repeat(pwm_arrays[0], _G)
+            x2 = np.tile(pwm_arrays[1], _G)
+            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            plcm_scores = x1 + x2 + x3
+            
+            hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
+            
+            hits_positions = []
+            elements_pos = []
+            for hit_idx in hits_indexes:
+                left, right = divmod(hit_idx, _G)
+                elements_pos.append((left, right))
+                if right < left:
+                    right += _G
+                hits_positions.append(int((left + right + self.motif_len)/2) % _G)
+                
+        # General case
+        else:
+            raise ValueError('To be coded ...')
+        
+        # Hits positions (center)
+        prev_stop = 0
+        for idx, pos in enumerate(hits_positions):
+            out_string += ' ' * (pos - prev_stop) + str(idx+1)
+            prev_stop = pos + len(str(idx+1))
+        out_string += ' ' * (_G - prev_stop) + '\n'
+        
+        # Hits placements
+        if self.motif_n == 2:
+            #plcm_list = [' '] * _G
+            to_be_printed = elements_pos
+            to_be_printed_idx = list(range(len(elements_pos)))
+            while len(to_be_printed) > 0:
+                new_plcm_list, to_be_printed, to_be_printed_idx = self._add_diad_plcm_line(
+                    [' '] * _G, to_be_printed, to_be_printed_idx)
+                out_string += ''.join(new_plcm_list) + '\n'
+        
+        # End of diagram
+        out_string += '-' * self.G + '\n'
+        
+        # Write to specified output file
+        if outfilepath:
+            with open(outfilepath, 'w') as f:
+                f.write(out_string)
+        
+        # Print to standard output
+        print(out_string)
+    
+    def study_diad(self, outfilepath=None):
+        
+        if self.motif_n != 2:
+            raise ValueError("The study_diad function is meant for diad-based regulators " +
+                             "(motif_n should be 2). 'motif_n' is " + str(self.motif_n))
+        
+        pwm_arrays = [self.pwm_scan(i+1) for i in range(self.motif_n)]
+        _G = self.G
+        x1 = np.repeat(pwm_arrays[0], _G)
+        x2 = np.tile(pwm_arrays[1], _G)
+        x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+        plcm_scores = x1 + x2 + x3
+        
+        hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
+        
+        # Case without hits
+        if len(hits_indexes) == 0:
+            if outfilepath:
+                
+                # Save (empty) IC report
+                ic_report = pd.DataFrame(
+                    {'Rseq1': [0, 0],
+                     'Rseq2': [0, 0],
+                     'Rspacer': [0, 0],
+                     'Rtot': [0, 0],
+                     'Rfrequency': [self.get_R_frequency(), self.get_R_frequency()]})
+                ic_report.index = ['corrected', 'uncorrected']
+                ic_report.to_csv(outfilepath + '_ic_report.csv')
+                
+                # Save (empty) Gaps report
+                with open(outfilepath + '_gaps_report.json', 'w') as f:
+                    json.dump([], f)
+            return
+        
+        hits_positions = []
+        elements_pos = []
+        for hit_idx in hits_indexes:
+            left, right = divmod(hit_idx, _G)
+            elements_pos.append((left, right))
+            if right < left:
+                right += _G
+            hits_positions.append(int((left + right + self.motif_len)/2) % _G)
+        
+        # Rsequence of the two elements
+        
+        L = self.motif_len
+        
+        # PWM1 binding sites
+        pwm1_tg_pos = [e[0] for e in elements_pos]
+        pwm1_tg_seq = [self.get_seq()[pos:pos+L] for pos in pwm1_tg_pos]
+        
+        # PWM2 binding sites
+        pwm2_tg_pos = [e[1] for e in elements_pos]
+        pwm2_tg_seq = [self.get_seq()[pos:pos+L] for pos in pwm2_tg_pos]
+        
+        # R_sequence
+        
+        # !!! NOT EXACTLY CORRECT:
+        #     This is using base probabilities 25% each
+        #     (they may change throughout the simulation)
+        EH = expected_entropy(self.gamma)
+        baseline_info = (2 - EH) * L
+        
+        # Rsequence1
+        Rseq1 = 0
+        for i in range(L):
+            obs_bases = [target_seq[i] for target_seq in pwm1_tg_seq]
+            
+            for base in self._bases:
+                freq = obs_bases.count(base) / len(obs_bases)
+                if freq != 0:
+                    bg_freq = self.acgt[base] / self.G
+                    Rseq1 += freq * (np.log2(freq) - np.log2(bg_freq))
+        
+        # Rsequence2
+        Rseq2 = 0
+        for i in range(L):
+            obs_bases = [target_seq[i] for target_seq in pwm2_tg_seq]
+            
+            for base in self._bases:
+                freq = obs_bases.count(base) / len(obs_bases)
+                if freq != 0:
+                    bg_freq = self.acgt[base] / self.G
+                    Rseq2 += freq * (np.log2(freq) - np.log2(bg_freq))
+        
+        # Rspacer
+        gaps = [(r - l) % _G - L for l, r in elements_pos]
+        counter = collections.Counter(gaps)
+        gap_counts = np.array(list(counter.values()))
+        gap_freqs = gap_counts / len(gaps)
+        gap_H = - sum([f * np.log2(f) for f in gap_freqs])
+        Rspacer = np.log2(_G) - gap_H
+        
+        # IC report
+        # print('  Rseq1 + Rseq2 + Rspacer =\n= {:.3f} + {:.3f} + {:.3f}   = {:.3f}  ~  {} = Rfreq\n'.format(
+        #     Rseq1-baseline_info, Rseq2-baseline_info, Rspacer,
+        #     Rseq1-baseline_info + Rseq2-baseline_info + Rspacer, self.get_R_frequency()))
+        
+        # Save IC report
+        if outfilepath:
+            ic_report = pd.DataFrame(
+                {'Rseq1': [Rseq1-baseline_info, Rseq1],
+                 'Rseq2': [Rseq2-baseline_info, Rseq2],
+                 'Rspacer': [Rspacer, Rspacer],
+                 'Rtot': [Rseq1+Rseq2+Rspacer-(2*baseline_info), Rseq1+Rseq2+Rspacer],
+                 'Rfrequency': [self.get_R_frequency(), self.get_R_frequency()]})
+            ic_report.index = ['corrected', 'uncorrected']
+            ic_report.to_csv(outfilepath + '_ic_report.csv')
+        
+        # Gaps report
+        # print('Gaps: {}\nConnector: mu={}, sigma={}\n'.format(
+        #     gaps, self.regulator['connectors'][0].mu, self.regulator['connectors'][0].sigma))
+        
+        # Save gaps report
+        if outfilepath:
+            with open(outfilepath + '_gaps_report.json', 'w') as f:
+                json.dump([int(gap) for gap in gaps], f)
+        
+        
+        
+        
 
                     
 
