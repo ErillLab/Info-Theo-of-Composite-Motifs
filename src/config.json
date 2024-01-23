@@ -1,8 +1,8 @@
 {
   "run_mode": "serial",
   "pop_size": 64,
-  "G": 512,
-  "gamma": 4,
+  "G": 256,
+  "gamma": 8,
   "mut_rate": 0.005,
   "motif_len": 5,
   "motif_res": 10,
@@ -10,7 +10,7 @@
   "min_mu": 0,
   "max_mu": 5,
   "threshold_res": 200,
-  "update_period": 5,
+  "update_period": null,
   "drift_time": 1000,
-  "max_n_gen": 4000
+  "max_n_gen": 40000
 }

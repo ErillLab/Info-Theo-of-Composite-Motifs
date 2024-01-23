@@ -46,7 +46,7 @@ def end_run(gen, solution_gen, drift_time, max_n_gen):
     if solution_gen:
         # A solution was already found:
         # Stop after `drift_time`
-        return gen > solution_gen + drift_time
+        return gen >= solution_gen + drift_time
     else:
         # No solution found so far:
         # Stop if no solution is found before `max_n_gen`
@@ -83,11 +83,9 @@ def main():
     
     if motif_n == 2:
         # Map diad placement indexes to genomic position of centroid
-        plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)
+        gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)[1]
     else:
-        plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx = None, None
-    
-    plcm_idx_to_gnom_pos = None  # Save memory. plcm_idx_to_gnom_pos is not used
+        gnom_pos_to_plcm_idx = None
     
     # Initialize population
     population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
@@ -135,8 +133,8 @@ def main():
             sorted_pop.append(org)
             sorted_fit.append(fitness)
         best_fitness = sorted_fit[0]
-        # print('sorted_fit:', sorted_fit)
-        # print('\tMax Fitness:', best_fitness)
+        print('sorted_fit:', sorted_fit)
+        print('\tMax Fitness:', best_fitness)
         
         # If the model is a single motif, keep track of Rseq through time
         # ---------------------------------------------------------------
@@ -156,13 +154,14 @@ def main():
             print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
             print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
             print('\tR_frequency:\t', org.get_R_frequency())
-        
-            if gen % update_period == 0:
-                min_Rseq_list.append(np.array(R_seq_list).min())
-                avg_Rseq_list.append(np.array(R_seq_list).mean())
-                max_Rseq_list.append(np.array(R_seq_list).max())
-                best_org_Rseq_list.append(np.array(best_organisms_R_seq).mean())
-                best_org_Rseq_ev_list.append(R_seq_list[0])
+            
+            if update_period:
+                if gen % update_period == 0:
+                    min_Rseq_list.append(np.array(R_seq_list).min())
+                    avg_Rseq_list.append(np.array(R_seq_list).mean())
+                    max_Rseq_list.append(np.array(R_seq_list).max())
+                    best_org_Rseq_list.append(np.array(best_organisms_R_seq).mean())
+                    best_org_Rseq_ev_list.append(R_seq_list[0])
         
         # Selection
         # ---------
@@ -189,7 +188,6 @@ def main():
         else:
             n_ties = 0
         
-                
         # Replacement of bad organisms with good organisms
         if n_ties == 0:
             #population = good + copy.deepcopy(good)
@@ -197,19 +195,29 @@ def main():
         else:
             #population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
             population = good + reproduce(good[:-n_ties]) + bad[:n_ties]
-    
-        # Save earliest solution
-        if best_fitness == 0 and not solution_gen:
-            org = population[0]
-            org.export(results_dirpath + 'gen_{}_org.json'.format(gen))
-            org.print_genome_map(results_dirpath + 'gen_{}_map.txt'.format(gen))
-            # IC report (CSV) and Gaps report (JSON)
-            org.study_diad(results_dirpath + 'gen_{}'.format(gen))
-            solution_gen = gen
+        
+        if motif_n == 2:
+            # Save earliest solution
+            if best_fitness == 0 and not solution_gen:
+                org = population[0]
+                org.export(results_dirpath + 'gen_{}_org.json'.format(gen))
+                org.print_genome_map(results_dirpath + 'gen_{}_map.txt'.format(gen))
+                # IC report (CSV) and Gaps report (JSON)
+                org.study_diad(results_dirpath + 'gen_{}'.format(gen))
+                solution_gen = gen
+                
+                # Save the settings for this run
+                with open(results_dirpath + 'parameters.json', 'w') as f:
+                    json.dump(config_dict, f)
             
-            # Save the settings for this run
-            with open(results_dirpath + 'parameters.json', 'w') as f:
-                json.dump(config_dict, f)
+            if update_period:
+                if gen % update_period == 0:
+                    org = population[0]
+                    org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
+                    org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
+                    # IC report (CSV) and Gaps report (JSON)
+                    org.study_diad(results_dirpath + 'ev_gen_{}'.format(gen))
+                    solution_gen = gen
     
     # Export latest solution
     if solution_gen:
