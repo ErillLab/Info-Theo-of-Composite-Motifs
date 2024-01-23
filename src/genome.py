@@ -47,7 +47,7 @@ class Genome():
             else:
                 self._diad_plcm_map = diad_plcm_map
         
-        self.pseudocounts = 0  # XXX Temporarily hardcoded
+        self.pseudocounts = 0.01  # XXX Temporarily hardcoded
         self.min_mu = config_dict['min_mu']
         self.max_mu = config_dict['max_mu']
         self.min_sigma = 0.01
@@ -442,6 +442,13 @@ class Genome():
                 ms = max(map(plcm_scores.__getitem__, self._diad_plcm_map[missed_target]))
                 # Penalty function. d = threshold - ms. Therefore, e^-d = e^(ms-threshold)
                 fn_penalty += (2 / (1+np.exp(ms-tr))) - 1
+                
+                # Extra penalty
+                fn_penalty += 3.1  # !!!
+                
+                # XXX
+                # Alternative penalty
+                # fn_penalty += (tr-ms)/(tr-ms+1)
             
             return -(fp_penalty + fn_penalty)
         
@@ -663,13 +670,13 @@ class Genome():
         out_string = ''
         prev_stop = 0
         for i in range(self.motif_n):
-            # PWM gene
+            # Print PWM gene
             start, stop = self.get_pwm_gene_pos(i+1)
             if start != prev_stop:
                 raise ValueError('Inconsistent gene map.')            
             out_string += self._get_gene_string('PWM' + str(i+1), stop - start)
             prev_stop = stop
-            # Connector gene
+            # Print Connector gene
             if i+1 > self.motif_n-1:
                 break
             start, stop = self.get_conn_gene_pos(i+1)
@@ -677,7 +684,7 @@ class Genome():
                 raise ValueError('Inconsistent gene map.')
             out_string += self._get_gene_string('CON' + str(i+1), stop - start)
             prev_stop = stop
-        # Threshold gene
+        # Print Threshold gene
         start, stop = self.get_threshold_gene_pos()
         if start != prev_stop:
             raise ValueError('Inconsistent gene map.')
@@ -777,8 +784,23 @@ class Genome():
         
         hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
         
-        # !!! Avoid case without hits
+        # Case without hits
         if len(hits_indexes) == 0:
+            if outfilepath:
+                
+                # Save (empty) IC report
+                ic_report = pd.DataFrame(
+                    {'Rseq1': [0, 0],
+                     'Rseq2': [0, 0],
+                     'Rspacer': [0, 0],
+                     'Rtot': [0, 0],
+                     'Rfrequency': [self.get_R_frequency(), self.get_R_frequency()]})
+                ic_report.index = ['corrected', 'uncorrected']
+                ic_report.to_csv(outfilepath + '_ic_report.csv')
+                
+                # Save (empty) Gaps report
+                with open(outfilepath + '_gaps_report.json', 'w') as f:
+                    json.dump([], f)
             return
         
         hits_positions = []
@@ -833,13 +855,6 @@ class Genome():
                     Rseq2 += freq * (np.log2(freq) - np.log2(bg_freq))
         
         # Rspacer
-        '''
-        gaps = []
-        for left, right in elements_pos:
-            distance = (right - left) % self.G
-            gap = distance - L
-            gaps.append(gap)
-        '''
         gaps = [(r - l) % _G - L for l, r in elements_pos]
         counter = collections.Counter(gaps)
         gap_counts = np.array(list(counter.values()))
@@ -848,9 +863,9 @@ class Genome():
         Rspacer = np.log2(_G) - gap_H
         
         # IC report
-        print('  Rseq1 + Rseq2 + Rspacer =\n= {:.3f} + {:.3f} + {:.3f}   = {:.3f}  ~  {} = Rfreq\n'.format(
-            Rseq1-baseline_info, Rseq2-baseline_info, Rspacer,
-            Rseq1-baseline_info + Rseq2-baseline_info + Rspacer, self.get_R_frequency()))
+        # print('  Rseq1 + Rseq2 + Rspacer =\n= {:.3f} + {:.3f} + {:.3f}   = {:.3f}  ~  {} = Rfreq\n'.format(
+        #     Rseq1-baseline_info, Rseq2-baseline_info, Rspacer,
+        #     Rseq1-baseline_info + Rseq2-baseline_info + Rspacer, self.get_R_frequency()))
         
         # Save IC report
         if outfilepath:
@@ -864,8 +879,8 @@ class Genome():
             ic_report.to_csv(outfilepath + '_ic_report.csv')
         
         # Gaps report
-        print('Gaps: {}\nConnector: mu={}, sigma={}\n'.format(
-            gaps, self.regulator['connectors'][0].mu, self.regulator['connectors'][0].sigma))
+        # print('Gaps: {}\nConnector: mu={}, sigma={}\n'.format(
+        #     gaps, self.regulator['connectors'][0].mu, self.regulator['connectors'][0].sigma))
         
         # Save gaps report
         if outfilepath:
