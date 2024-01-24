@@ -69,10 +69,11 @@ class Genome():
         self.set_acgt_content()
         
         # Set target sites
+        self.targets_type = config_dict['targets_type']
+        self.spacers = config_dict['spacers']
         self.targets = None
         self.set_targets()
         
-        # !!!
         self.translate_regulator()
     
     def copy_constructor(self, parent):
@@ -107,6 +108,8 @@ class Genome():
         self._bases = parent._bases[:]
         self._nucl_to_int = copy.deepcopy(parent._nucl_to_int)
         
+        self.targets_type = parent.targets_type
+        self.spacers = copy.deepcopy(parent.spacers)
         self.targets = parent.targets[:]
         
     
@@ -248,15 +251,53 @@ class Genome():
     
     def set_targets(self):
         ''' Sets the `targets` attribute. '''
-        # Avoid setting targets within the coding sequences (the first part of the genome)
-        end_CDS = self.get_non_coding_start_pos()
-        # Avoid overlapping sites
-        tmp = random.sample(range(end_CDS, self.G-self.motif_len, self.motif_len), k=self.gamma)
-        tmp.sort()
-        for i in range(len(tmp)-1):
-            gap = tmp[i+1] - (tmp[i] + self.motif_len)
-            tmp[i] += random.randint(0, min(gap, self.motif_len))
-        self.targets = tmp
+        
+        if self.targets_type == 'centroids':
+            # Avoid setting targets within the coding sequences (the first part of the genome)
+            end_CDS = self.get_non_coding_start_pos()
+            # Avoid overlapping sites
+            tmp = random.sample(range(end_CDS, self.G-self.motif_len, self.motif_len), k=self.gamma)
+            tmp.sort()
+            for i in range(len(tmp)-1):
+                gap = tmp[i+1] - (tmp[i] + self.motif_len)
+                tmp[i] += random.randint(0, min(gap, self.motif_len))
+            self.targets = tmp
+        
+        elif self.targets_type == 'placements':
+            if self.gamma != len(self.spacers):
+                raise ValueError('The number of specified spacers is different ' +
+                                 'from the number of requested targets (gamma).')
+            
+            # Occupancy
+            occ = sum([(self.motif_len * 2) + s for s in self.spacers])
+            noncod_bp = (self.G - self.get_non_coding_start_pos())
+            if occ > noncod_bp:
+                raise ValueError('Genome is too short for such spacers.')
+            free_bp = noncod_bp - occ
+            # Distribute the 'free bp' randomly (from Unif) among the inter-site spaces
+            # (there's also a space before the first and after the last site,
+            # so it's gamma+1 intervals in total)
+            grouped = [int(x) for x in np.random.uniform(0, self.gamma+1, free_bp)]
+            intervals = []
+            for x in set(grouped):
+                intervals.append(grouped.count(x))
+            if len(intervals) < self.gamma+1:
+                # If some bins are empty the become zeros in the counts vector
+                intervals += [0]*(self.gamma+1 - len(intervals))
+            # Define targets' placements
+            start = self.get_non_coding_start_pos()
+            placements = []
+            for i in range(self.gamma):                
+                left = start + intervals[i]
+                right = left + self.motif_len + self.spacers[i]
+                placements.append((left, right))  # where the two elements start
+                start = right + self.motif_len
+            
+            # Transform (left, right) placements into a single index up to G^2
+            self.targets = [left*self.G + right for (left, right) in placements]
+        
+        else:
+            raise ValueError("targets_type must be 'centroids' or 'placements'.")
     
     def nucl_seq_to_int(self, nucl_seq):
         '''
@@ -419,38 +460,64 @@ class Genome():
             
             hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
             
-            # 'position' is the placement 'center'
-            hits_positions = []
-            for idx in hits_indexes:
-                left, right = divmod(idx, _G)
-                if right < left:
-                    right += _G
-                hits_positions.append(int((left + right + self.motif_len)/2) % _G)
-            
-            # Calculate fitness
-            # -----------------
-            
-            # False Positives penalty (penalty is 1 per FP)
-            fp_penalty = self.count_false_positives(hits_positions)
-            
-            # False Negatives penalty (penalty is between 0 and 1 per FN)
-            fn_penalty = 0
-            tr = self.regulator['threshold']
-            # Candidate placements on targets
-            for missed_target in list(set(self.targets).difference(set(hits_positions))):
-                # Maximum score among the placements that map onto that genomic position
-                ms = max(map(plcm_scores.__getitem__, self._diad_plcm_map[missed_target]))
-                # Penalty function. d = threshold - ms. Therefore, e^-d = e^(ms-threshold)
-                fn_penalty += (2 / (1+np.exp(ms-tr))) - 1
+            if self.targets_type == 'placements':
                 
-                # Extra penalty
-                fn_penalty += 3.1  # !!!
+                # False Positives penalty (penalty is 1 per FP)
+                fp_penalty = len(set(hits_indexes).difference(set(self.targets)))
                 
-                # XXX
-                # Alternative penalty
-                # fn_penalty += (tr-ms)/(tr-ms+1)
+                # False Negatives penalty (penalty is between 0 and 1 per FN)
+                fn_penalty = 0
+                tr = self.regulator['threshold']
+                for missed in list(set(self.targets).difference(set(hits_indexes))):
+                    # score
+                    s = plcm_scores[missed]
+                    # Penalty function. d = threshold - s. Therefore, e^-d = e^(s-threshold)
+                    fn_penalty += (2 / (1+np.exp(s-tr))) - 1
+                    
+                    # Extra penalty
+                    #fn_penalty += 3  # !!!
+                    
+                    # XXX
+                    # Alternative penalty
+                    # fn_penalty += (tr-ms)/(tr-ms+1)
+                
+                return -(fp_penalty + fn_penalty)
             
-            return -(fp_penalty + fn_penalty)
+            
+            elif self.targets_type == 'centroids':
+                
+                # 'position' is the placement 'centroid'
+                hits_positions = []
+                for idx in hits_indexes:
+                    left, right = divmod(idx, _G)
+                    if right < left:
+                        right += _G
+                    hits_positions.append(int((left + right + self.motif_len)/2) % _G)
+                
+                # Calculate fitness
+                # -----------------
+                
+                # False Positives penalty (penalty is 1 per FP)
+                fp_penalty = self.count_false_positives(hits_positions)
+                
+                # False Negatives penalty (penalty is between 0 and 1 per FN)
+                fn_penalty = 0
+                tr = self.regulator['threshold']
+                # Candidate placements on targets
+                for missed_target in list(set(self.targets).difference(set(hits_positions))):
+                    # Maximum score among the placements that map onto that genomic position
+                    ms = max(map(plcm_scores.__getitem__, self._diad_plcm_map[missed_target]))
+                    # Penalty function. d = threshold - ms. Therefore, e^-d = e^(ms-threshold)
+                    fn_penalty += (2 / (1+np.exp(ms-tr))) - 1
+                    
+                    # Extra penalty
+                    fn_penalty += 3.1  # !!!
+                    
+                    # XXX
+                    # Alternative penalty
+                    # fn_penalty += (tr-ms)/(tr-ms+1)
+                
+                return -(fp_penalty + fn_penalty)
         
         # Code for the general case (works for any value of `motif_n`)
         else:
@@ -654,8 +721,8 @@ class Genome():
                 leftovers.append((l,r))
                 leftovers_idx.append(idx)
             else:
-                outlist[l:l+self.motif_len] = [str(idx+1)] + ['L'] * (self.motif_len - len(str(idx+1)))
-                outlist[r:r+self.motif_len] = [str(idx+1)] + ['R'] * (self.motif_len - len(str(idx+1)))
+                outlist[l:l+self.motif_len] = [c for c in str(idx+1)] + ['L'] * (self.motif_len - len(str(idx+1)))
+                outlist[r:r+self.motif_len] = [c for c in str(idx+1)] + ['R'] * (self.motif_len - len(str(idx+1)))
         return outlist, leftovers, leftovers_idx
     
     def print_genome_map(self, outfilepath=None):
@@ -693,10 +760,22 @@ class Genome():
         
         # Annotate targets
         # ----------------
-        for i, pos in enumerate(self.targets):
-            out_string += ' ' * (pos - prev_stop) + str(i+1)
-            prev_stop = pos + len(str(i+1))
-        out_string += ' ' * (self.G - prev_stop) + '\n'
+        if self.targets_type == 'centroids':
+            for i, pos in enumerate(self.targets):
+                out_string += ' ' * (pos - prev_stop) + str(i+1)
+                prev_stop = pos + len(str(i+1))
+            out_string += ' ' * (self.G - prev_stop) + '\n'
+        
+        elif self.targets_type == 'placements':
+            mot_len = self.motif_len
+            for i, idx in enumerate(self.targets):
+                left, right = divmod(idx, self.G)
+                out_string += ' ' * (left - prev_stop)
+                out_string += (str(i+1) + 'L'*mot_len)[:mot_len]
+                out_string += ' ' * (right - (left+mot_len))
+                out_string += (str(i+1) + 'R'*mot_len)[:mot_len]
+                prev_stop = right + mot_len
+            out_string += ' ' * (self.G - prev_stop) + '\n'
         
         # Genome sequence
         # ---------------

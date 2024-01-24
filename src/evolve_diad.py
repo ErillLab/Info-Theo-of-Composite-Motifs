@@ -81,11 +81,16 @@ def main():
     results_dirpath = '../results/' + run_tag + '/'
     os.makedirs(results_dirpath, exist_ok=True)
     
+    gnom_pos_to_plcm_idx = None
     if motif_n == 2:
-        # Map diad placement indexes to genomic position of centroid
-        gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)[1]
-    else:
-        gnom_pos_to_plcm_idx = None
+        if config_dict['targets_type'] == 'centroids':
+            # Map diad placement indexes to genomic position of centroid
+            gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)[1]
+        elif config_dict['targets_type'] == 'placements':
+            gnom_pos_to_plcm_idx = []
+        else:
+            raise ValueError("'targets_type' must be 'centroids' or 'placements'.")
+        
     
     # Initialize population
     population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
