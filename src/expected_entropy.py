@@ -197,15 +197,15 @@ def exp_entropy(n, N_bins):
 
 
 
-
-
-
-
-
-
-
-
-
+# def binom_coefficients(m):
+#     coefficients = []
+#     c = 1
+#     for x in range(m + 1):
+#         # B(m, x) is 1 if either m or x is 0.
+#         if m != 0 and x != 0:
+#             c = c * (m - x + 1) / x
+#         coefficients.append(int(c))
+#     return coefficients
 
 
 

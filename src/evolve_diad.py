@@ -141,6 +141,15 @@ def main():
         print('sorted_fit:', sorted_fit)
         print('\tMax Fitness:', best_fitness)
         
+        '''
+        mus = [int(org.regulator['connectors'][0].mu) for org in population]
+        sigmas = [int(org.regulator['connectors'][0].sigma) for org in population]
+        mus.sort()
+        sigmas.sort()
+        print('mu   :\n', mus)
+        print('sigma:\n', sigmas)
+        '''
+        
         # If the model is a single motif, keep track of Rseq through time
         # ---------------------------------------------------------------
         if motif_n == 1:

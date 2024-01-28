@@ -171,7 +171,8 @@ class Genome():
             else:
                 raise ValueError('There are only {} connectors'.format(self.motif_n-1))
         # Gene coordinates
-        offset = (conn_number * self.get_pwm_gene_len()) + ((conn_number - 1) * self.get_conn_gene_len())
+        offset = ((conn_number * self.get_pwm_gene_len()) +
+                  ((conn_number - 1) * self.get_conn_gene_len()))
         return (offset, offset + self.get_conn_gene_len())
     
     def get_threshold_gene_pos(self):
@@ -212,14 +213,20 @@ class Genome():
         mu_locus, sigma_locus = gene_seq[:-3], gene_seq[-3:]
         # Translate mu
         if len(mu_locus)==0:
-            mu = self.min_mu
+            mu = self.min_mu  # Fixed-mu case (min_mu = max_mu)
         else:
             mu = self.nucl_seq_to_int(mu_locus)
             if mu > self.max_mu:
+                raise ValueError('over max mu')
                 mu = self.max_mu
         # Transalte sigma
         sigma_idx = self.nucl_seq_to_int(sigma_locus)
         sigma = self._sigma_vals[sigma_idx]
+        
+        ###################################################################
+        # !!!
+        ###################################################################
+        #return Connector(5, 1, self.G, self.motif_len)
         return Connector(mu, sigma, self.G, self.motif_len)
     
     def translate_threshold_gene(self):
@@ -247,7 +254,9 @@ class Genome():
         # Translate threshold
         threshold = self.translate_threshold_gene()
         # Set regulator
-        self.regulator = {'recognizers': recog_list, 'connectors': conn_list, 'threshold': threshold}
+        self.regulator = {'recognizers': recog_list,
+                          'connectors': conn_list,
+                          'threshold': threshold}
     
     def set_targets(self):
         ''' Sets the `targets` attribute. '''
@@ -256,7 +265,8 @@ class Genome():
             # Avoid setting targets within the coding sequences (the first part of the genome)
             end_CDS = self.get_non_coding_start_pos()
             # Avoid overlapping sites
-            tmp = random.sample(range(end_CDS, self.G-self.motif_len, self.motif_len), k=self.gamma)
+            tmp = random.sample(range(end_CDS, self.G-self.motif_len, self.motif_len),
+                                k=self.gamma)
             tmp.sort()
             for i in range(len(tmp)-1):
                 gap = tmp[i+1] - (tmp[i] + self.motif_len)
@@ -468,18 +478,27 @@ class Genome():
                 # False Negatives penalty (penalty is between 0 and 1 per FN)
                 fn_penalty = 0
                 tr = self.regulator['threshold']
+                FNp = ((self.G**self.motif_n)-self.gamma)/self.gamma
                 for missed in list(set(self.targets).difference(set(hits_indexes))):
+                    
+                    
+                    ##########################
+                    fn_penalty += FNp
+                    ##########################
+                    
+                    '''
                     # score
                     s = plcm_scores[missed]
                     # Penalty function. d = threshold - s. Therefore, e^-d = e^(s-threshold)
                     fn_penalty += (2 / (1+np.exp(s-tr))) - 1
                     
                     # Extra penalty
-                    #fn_penalty += 3  # !!!
+                    fn_penalty += 3  # !!!
                     
                     # XXX
                     # Alternative penalty
                     # fn_penalty += (tr-ms)/(tr-ms+1)
+                    '''
                 
                 return -(fp_penalty + fn_penalty)
             
@@ -503,8 +522,15 @@ class Genome():
                 # False Negatives penalty (penalty is between 0 and 1 per FN)
                 fn_penalty = 0
                 tr = self.regulator['threshold']
+                FNp = ((self.G**self.motif_n)-self.gamma)/self.gamma
                 # Candidate placements on targets
                 for missed_target in list(set(self.targets).difference(set(hits_positions))):
+                    
+                    ##########################
+                    fn_penalty += FNp
+                    ##########################
+                    
+                    '''
                     # Maximum score among the placements that map onto that genomic position
                     ms = max(map(plcm_scores.__getitem__, self._diad_plcm_map[missed_target]))
                     # Penalty function. d = threshold - ms. Therefore, e^-d = e^(ms-threshold)
@@ -516,6 +542,7 @@ class Genome():
                     # XXX
                     # Alternative penalty
                     # fn_penalty += (tr-ms)/(tr-ms+1)
+                    '''
                 
                 return -(fp_penalty + fn_penalty)
         
@@ -538,8 +565,9 @@ class Genome():
         mutation per organism per generation, the number of mutations is a random
         number that depends on the mutation rate.
         '''
-        #n_mut_bases = np.random.binomial(self.G, self.mut_rate)
-        n_mut_bases = int(self.G * self.mut_rate)
+        n_mut_bases = np.random.binomial(self.G, self.mut_rate)
+        #n_mut_bases = int(self.G * self.mut_rate)
+        #n_mut_bases = np.random.poisson(self.G * self.mut_rate)
         if n_mut_bases > 0:
             mut_bases_positions = random.sample(range(self.G), k=n_mut_bases)
             for pos in mut_bases_positions:
@@ -716,8 +744,9 @@ class Genome():
         for i in range(len(elements_pos)):
             l, r = elements_pos[i]
             idx = elements_idx[i]
-            if (outlist[l:l+self.motif_len] != [' '] * self.motif_len or
-                outlist[r:r+self.motif_len] != [' '] * self.motif_len):
+            
+            if (set(outlist[l:l+self.motif_len]) != {' '} or
+                set(outlist[r:r+self.motif_len]) != {' '}):
                 leftovers.append((l,r))
                 leftovers_idx.append(idx)
             else:
