@@ -721,6 +721,9 @@ class Genome():
                     'min_mu': self.min_mu, 'max_mu': self.max_mu,
                     'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
                     'pseudocounts': self.pseudocounts}
+        if self.motif_n == 2:
+            out_dict['mu']    = self.regulator['connectors'][0].mu
+            out_dict['sigma'] = self.regulator['connectors'][0].sigma
         if outfilepath:
             with open(outfilepath, 'w') as f:
                 json.dump(out_dict, f)
