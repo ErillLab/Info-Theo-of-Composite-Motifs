@@ -113,7 +113,7 @@ def main():
     while not end_run(gen, solution_gen, drift_time, max_n_gen):
         
         gen += 1
-        print("Gen:", gen)
+        print("\nGen:", gen)
         
         # Avoid second-order selection towards higher IC than necessary
         random.shuffle(population)
@@ -143,10 +143,10 @@ def main():
         
         '''
         mus = [int(org.regulator['connectors'][0].mu) for org in population]
-        sigmas = [int(org.regulator['connectors'][0].sigma) for org in population]
         mus.sort()
-        sigmas.sort()
         print('mu   :\n', mus)
+        sigmas = [int(org.regulator['connectors'][0].sigma) for org in population]
+        sigmas.sort()
         print('sigma:\n', sigmas)
         '''
         

@@ -3,6 +3,7 @@
 
 import os
 import json
+import shutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -149,8 +150,23 @@ def make_3d_plot(df, parameters):
 # ===============
 
 # !!! Settings
-results_dir = '../results/G256_Gamma8_ML4/'
+results_dir = '../results/G256_Gamma8_ML5_Placements_SpacerH0_Fit/'
 sample_size = None
+
+
+# CLEANUP FOLDER (remove empty/incomplete subfolders)
+for f in os.listdir(results_dir):
+    # Skip files if present
+    if not os.path.isdir(results_dir + f):
+        continue
+    # Remove empty subfolders
+    if len(os.listdir(results_dir + f)) == 0:
+        print('Removing empty subfolder:', f)
+        os.rmdir(results_dir + f)
+    # Remove incomplete subfolders ("complete" subfolders contain 9 items)
+    elif len(os.listdir(results_dir + f)) != 9:
+        print('Removing incomplete subfolder:', f)
+        shutil.rmtree(results_dir + f)
 
 
 
@@ -175,7 +191,11 @@ drifted_df = merge_dataframes(drifted)
 parameters = read_json_file(results_dir + folder + '/parameters.json')
 
 # Save Stacked Bar Plot
-stacked_barplots(initial_df, drifted_df, parameters, 'z_barplots10.png')
+if sample_size:
+    filename = 'barplots_{}.png'.format(sample_size)
+else:
+    filename = 'barplots_ALL_{}.png'.format(len(folders))
+stacked_barplots(initial_df, drifted_df, parameters, filename)
 
 # 3D plot initial
 make_3d_plot(initial_df, parameters)

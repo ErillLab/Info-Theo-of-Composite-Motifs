@@ -6,6 +6,7 @@ import random
 import copy
 import math
 import json
+import numbers
 # import itertools
 import collections
 import pandas as pd
@@ -48,6 +49,10 @@ class Genome():
                 self._diad_plcm_map = diad_plcm_map
         
         self.pseudocounts = 0.01  # XXX Temporarily hardcoded
+        
+        self.fix_mu = config_dict['fix_mu']
+        self.fix_sigma = config_dict['fix_sigma']
+        
         self.min_mu = config_dict['min_mu']
         self.max_mu = config_dict['max_mu']
         self.min_sigma = 0.01
@@ -88,11 +93,16 @@ class Genome():
         self.threshold_res = parent.threshold_res
         self.max_threshold = parent.max_threshold
         self.min_threshold = parent.min_threshold
+        self.fix_mu = parent.fix_mu
+        self.fix_sigma = parent.fix_sigma
         
         if self.motif_n == 2:
             self._diad_plcm_map = parent._diad_plcm_map
         
         self.pseudocounts = parent.pseudocounts
+        
+        self.fix_mu = parent.fix_mu
+        self.fix_sigma = parent.fix_sigma
         self.min_mu = parent.min_mu
         self.max_mu = parent.max_mu
         self.min_sigma = parent.min_sigma
@@ -209,30 +219,54 @@ class Genome():
         return motifs.create([inst.upper() for inst in instances])
     
     def translate_conn_gene(self, conn_number):
-        gene_seq = self.get_conn_gene_seq(conn_number)
-        mu_locus, sigma_locus = gene_seq[:-3], gene_seq[-3:]
-        # Translate mu
-        if len(mu_locus)==0:
-            mu = self.min_mu  # Fixed-mu case (min_mu = max_mu)
-        else:
-            mu = self.nucl_seq_to_int(mu_locus)
-            if mu > self.max_mu:
-                raise ValueError('over max mu')
-                mu = self.max_mu
-        # Transalte sigma
-        sigma_idx = self.nucl_seq_to_int(sigma_locus)
-        sigma = self._sigma_vals[sigma_idx]
+        ''' Returns a connector object with mu and sigma translated from the
+        connector gene, unless they are 'fixed' in the settings.
+        '''
         
-        ###################################################################
-        # !!!
-        ###################################################################
-        #return Connector(5, 1, self.G, self.motif_len)
-        return Connector(mu, sigma, self.G, self.motif_len)
+        # No gene translation
+        if (isinstance(self.fix_mu, numbers.Number) and
+            isinstance(self.fix_sigma, numbers.Number)):
+            return Connector(self.fix_mu, self.fix_sigma, self.G, self.motif_len)
+        
+        # Gene translation
+        else:
+            gene_seq = self.get_conn_gene_seq(conn_number)
+            mu_locus, sigma_locus = gene_seq[:-3], gene_seq[-3:]
+            
+            # Define mu
+            if isinstance(self.fix_mu, numbers.Number):
+                mu = self.fix_mu
+            else:
+                # Translate mu
+                if len(mu_locus)==0:
+                    mu = self.min_mu  # Fixed-mu case (min_mu = max_mu)
+                else:
+                    mu = self.nucl_seq_to_int(mu_locus)
+                    if mu > self.max_mu:
+                        raise ValueError('over max mu')
+                        mu = self.max_mu
+            
+            # Define sigma
+            if isinstance(self.fix_sigma, numbers.Number):
+                sigma = self.fix_sigma
+            else:
+                # Transalte sigma
+                sigma_idx = self.nucl_seq_to_int(sigma_locus)
+                sigma = self._sigma_vals[sigma_idx]
+            
+            return Connector(mu, sigma, self.G, self.motif_len)
+
     
     def translate_threshold_gene(self):
         thrsh = (self.nucl_seq_to_int(self.get_thrsh_gene_seq()) / self.threshold_res) - self.max_threshold
+        
         #return (self.nucl_seq_to_int(self.get_thrsh_gene_seq()) / self.threshold_res) + self.min_threshold
-
+        '''
+        By doing `- self.max_threshold` instead of `+ self.min_threshold`, the
+        self.min_threshold attribute is no longer needed ...
+        XXX Remove self.min_threshold
+        '''
+        
         # Following code is not needed: a threshold higher than `max_threshold`
         # would work the same way as a threshold value of exactly `max_threshold`
         if thrsh > self.max_threshold:
@@ -478,27 +512,29 @@ class Genome():
                 # False Negatives penalty (penalty is between 0 and 1 per FN)
                 fn_penalty = 0
                 tr = self.regulator['threshold']
-                FNp = ((self.G**self.motif_n)-self.gamma)/self.gamma
+                #FNp = ((self.G**self.motif_n)-self.gamma)/self.gamma
                 for missed in list(set(self.targets).difference(set(hits_indexes))):
                     
                     
                     ##########################
-                    fn_penalty += FNp
+                    #fn_penalty += FNp
                     ##########################
                     
-                    '''
+                    
                     # score
                     s = plcm_scores[missed]
                     # Penalty function. d = threshold - s. Therefore, e^-d = e^(s-threshold)
-                    fn_penalty += (2 / (1+np.exp(s-tr))) - 1
+                    #fn_penalty += (2 / (1+np.exp(s-tr))) - 1
+                    #fn_penalty += (  (2 / (1+np.exp(s-tr))) - 1  ) * 12
+                    #fn_penalty += (tr - s)
                     
                     # Extra penalty
-                    fn_penalty += 3  # !!!
+                    fn_penalty += 1  # !!!
                     
                     # XXX
                     # Alternative penalty
-                    # fn_penalty += (tr-ms)/(tr-ms+1)
-                    '''
+                    fn_penalty += (tr-s)/(tr-s+1)
+                    
                 
                 return -(fp_penalty + fn_penalty)
             
