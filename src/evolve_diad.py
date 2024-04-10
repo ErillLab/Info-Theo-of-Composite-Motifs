@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
+
 
 #import cProfile
 import time
-
 import random
 import numpy as np
 import json
@@ -20,6 +19,41 @@ def read_json_file(filename):
     ''' Returns the content of a specified JSON file as a python object. '''
     with open(filename) as json_content:
         return json.load(json_content)
+
+def check_settings(config_dict):
+    ''' Raises Errors if the settings are inconsistent. '''
+    
+    # Check `run_mode`
+    if config_dict['run_mode'] not in ['serial', 'parallel']:
+        raise ValueError("run_mode should be 'serial' or 'parallel'.")
+    
+    # Check `targets_type`
+    if config_dict['targets_type'] not in ['placements', 'centroids']:
+        raise ValueError("targets_type should be 'placements' or 'centroids'.")
+    
+    # Check `spacers`
+    if not isinstance(config_dict['spacers'], list):
+        raise ValueError("spacers should be a list.")
+    else:
+        for spacer in config_dict['spacers']:
+            if not isinstance(spacer, int):
+                raise ValueError("Each spacer value should be an integer.")
+    if config_dict["targets_type"] == "placements":
+        if len(config_dict['spacers']) != config_dict['gamma']:
+            raise ValueError("The list `spacers` specified in the settings " +
+                             "should contain one spacer value per site. The " +
+                             "number of elements should therefore be equal " +
+                             "to the parameter `gamma`.")
+    
+    # Check `connector_type`
+    if config_dict['connector_type'] not in ['uniform', 'gaussian']:
+        raise ValueError("connector_type should be 'uniform' or 'gaussian'.")
+    
+    # Check `fix_*`
+    for key in ['fix_mu', 'fix_sigma', 'fix_left', 'fix_right']:
+        if isinstance(config_dict[key], bool):
+            if config_dict[key]:
+                raise ValueError(key + " should be either a number or None or False")
 
 def generate_diad_plcm_map(config_dict):
     # Map diad placement indexes to genomic position of centroid
@@ -53,15 +87,13 @@ def end_run(gen, solution_gen, drift_time, max_n_gen):
         return gen > max_n_gen
 
 
-
-
-
 def main():
     
     # SET UP
     
     config_filename = 'config.json'
     config_dict = read_json_file(config_filename)
+    check_settings(config_dict)
     
     run_tag = time.strftime("%Y%m%d%H%M%S")
     run_mode = config_dict['run_mode']
@@ -96,7 +128,7 @@ def main():
     population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
     
     
-    # START
+    # START EVOLUTIONARY SIMULATION
     
     min_Rseq_list = []
     avg_Rseq_list = []
@@ -150,6 +182,22 @@ def main():
         print('sigma:\n', sigmas)
         '''
         
+        
+        '''
+        left_list = [int(org.regulator['connectors'][0].min_gap) for org in population]
+        right_list = [int(org.regulator['connectors'][0].max_gap) for org in population]
+        rev = 0
+        ok = 0
+        for n_org in range(len(left_list)):
+            if left_list[n_org] > right_list[n_org]:
+                rev += 1
+            else:
+                ok += 1
+        #print('rev: {}, ok: {}'.format(rev, ok))
+        print('Best range: [{}, {}]'.format(sorted_pop[0].regulator['connectors'][0].min_gap,
+                                            sorted_pop[0].regulator['connectors'][0].max_gap))
+        '''
+        
         # If the model is a single motif, keep track of Rseq through time
         # ---------------------------------------------------------------
         if motif_n == 1:
@@ -185,7 +233,7 @@ def main():
         # Number of ties
         if sorted_fit[middle-1] == sorted_fit[middle]:
             tie_fit_val = sorted_fit[middle]
-            # XXX OPTIMIZE THIS CODE! ------------------------
+            # XXX OPTIMIZE THIS CODE! -----------------------------------------
             n_in_good = 0
             n_in_bad = 0
             for fitness in sorted_fit[middle:]:
@@ -197,7 +245,7 @@ def main():
                 if fitness != tie_fit_val:
                     break
                 n_in_good += 1
-            # ------------------------------------------------
+            # -----------------------------------------------------------------
             n_ties = min(n_in_good, n_in_bad)
         else:
             n_ties = 0
@@ -240,6 +288,7 @@ def main():
         org.print_genome_map(results_dirpath + 'gen_{}_map.txt'.format(gen))
         # IC report (CSV) and Gaps report (JSON)
         org.study_diad(results_dirpath + 'gen_{}'.format(gen))
+        print('\nDone. Results in ', results_dirpath)
     else:
         os.rmdir(results_dirpath)
         print('{}: No solution obtained.'.format(results_dirpath))
@@ -248,9 +297,12 @@ def main():
 
 if __name__ == '__main__':
     
+    '''
     # Start a new run as soon as the previous one is done, until the process is killed
     while True:
         main()
+    '''
+    main()
 
 
 
