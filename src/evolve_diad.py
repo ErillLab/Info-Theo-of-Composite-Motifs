@@ -49,13 +49,28 @@ def check_settings(config_dict):
     if config_dict['connector_type'] not in ['uniform', 'gaussian']:
         raise ValueError("connector_type should be 'uniform' or 'gaussian'.")
     
-    # Check `fix_*`
+    # Check all `fix_*` parameters
     for key in ['fix_mu', 'fix_sigma', 'fix_left', 'fix_right']:
         if isinstance(config_dict[key], bool):
             if config_dict[key]:
                 raise ValueError(key + " should be either a number or None or False")
 
 def generate_diad_plcm_map(config_dict):
+    '''
+    For a dimeric TF there are G^2 possible placements (because each of the two
+    elements of the diad can be in G positions). Each of the G^2 possible diad
+    placements has a centroid, i.e. the center of the placement (rounded down
+    when it is in between two genomic positions). This function returns:
+    
+    plcm_idx_to_gnom_pos : list (of G^2 integers)
+        Maps the i-th diad placement to the position of its centroid.
+        The i-th element in the list stores the centroid position.
+        
+    gnom_pos_to_plcm_idx : list (of G lists)
+        Maps each genomic position to the list of all the diad placements that
+        have that genomic position as centroid. The diad placements are identified
+        by their index [from 0 to (G^2)-1].
+    '''
     # Map diad placement indexes to genomic position of centroid
     G = config_dict['G']
     mot_len = config_dict['motif_len']
@@ -72,11 +87,13 @@ def generate_diad_plcm_map(config_dict):
     return plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx
 
 def reproduce(organisms):
-    ''' The Genome objects in `organisms` (a list) are cloned, and a the clones
+    ''' The Genome objects in `organisms` (a list) are cloned, and the clones
     (a list) are returned. '''
     return [Genome(clone=parent) for parent in organisms]
 
 def end_run(gen, solution_gen, drift_time, max_n_gen):
+    ''' Returns True if the run reached the end (according to input parameters).
+    Returns False otherwise. '''
     if solution_gen:
         # A solution was already found:
         # Stop after `drift_time`
@@ -173,14 +190,14 @@ def main():
         print('sorted_fit:', sorted_fit)
         print('\tMax Fitness:', best_fitness)
         
-        '''
+        
         mus = [int(org.regulator['connectors'][0].mu) for org in population]
         mus.sort()
         print('mu   :\n', mus)
-        sigmas = [int(org.regulator['connectors'][0].sigma) for org in population]
+        sigmas = [int(100 * org.regulator['connectors'][0].sigma)/100 for org in population]
         sigmas.sort()
         print('sigma:\n', sigmas)
-        '''
+        
         
         
         '''
@@ -222,7 +239,7 @@ def main():
                     min_Rseq_list.append(np.array(R_seq_list).min())
                     avg_Rseq_list.append(np.array(R_seq_list).mean())
                     max_Rseq_list.append(np.array(R_seq_list).max())
-                    best_org_Rseq_list.append(np.array(best_organisms_R_seq).mean())
+                    best_org_Rseq_list.append(np.mean(best_organisms_R_seq))
                     best_org_Rseq_ev_list.append(R_seq_list[0])
         
         # Selection
