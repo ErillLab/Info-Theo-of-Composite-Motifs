@@ -263,7 +263,7 @@ class Genome():
             # Gene translation
             else:
                 gene_seq = self.get_conn_gene_seq(conn_number)
-                left_locus, span_locus = gene_seq[:len(gene_seq)//2], gene_seq[len(gene_seq)//2:]
+                left_locus, right_locus = gene_seq[:len(gene_seq)//2], gene_seq[len(gene_seq)//2:]
                 
                 # Define left
                 if self._is_number(self.fix_left):
@@ -278,9 +278,7 @@ class Genome():
                     right = self.fix_right
                 else:
                     # Transalte right
-                    
-                    # ...
-                    right = self.min_left + self.nucl_seq_to_int(span_locus)  # !!! Rename 'right_locus'
+                    right = self.min_left + self.nucl_seq_to_int(right_locus)
                     right = right % (self.max_right + 1)
                 
                 if left > right:
@@ -316,10 +314,20 @@ class Genome():
                 if self._is_number(self.fix_sigma):
                     sigma = self.fix_sigma
                 else:
+                    '''
                     # Transalte sigma
                     sigma_idx = self.nucl_seq_to_int(sigma_locus)
                     sigma = self._sigma_vals[sigma_idx]
-                
+                    '''
+                    
+                    # !!! Alternative definition of sigma based on spring constant
+                    # 0 <= x <= 5
+                    x = 5 * self.nucl_seq_to_int(sigma_locus)/63
+                    # 10^-5 <= k <= 1
+                    k = 10**(-x)
+                    # 0.019235 <= sigma <= 6.082641
+                    sigma = 0.019235/(k**(1/2))
+                    
                 return ConnectorGauss(mu, sigma, self.G, self.motif_len)
         
         else:
@@ -449,7 +457,7 @@ class Genome():
             _G = self.G
             x1 = np.repeat(pwm_arrays[0], _G)
             x2 = np.tile(pwm_arrays[1], _G)
-            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            x3 = np.array([self.regulator['connectors'][0].get_score((j - i) % _G) for i in range(_G) for j in range(_G)])
             
             plcm_scores = x1 + x2 + x3
             
@@ -477,7 +485,7 @@ class Genome():
             
             # for plcm in plcm_pwm_pos:
             #     distances = [t - s for s, t in zip(plcm, plcm[1:])]
-            #     connscores = [self.regulator['connectors'][i].score(distances[i]) for i in range(len(distances))]
+            #     connscores = [self.regulator['connectors'][i].get_score(distances[i]) for i in range(len(distances))]
             #     plcm_spcr_scores.append(connscores)
             
             # plcm_scores = []
@@ -501,6 +509,7 @@ class Genome():
                  self.count_false_negatives(hits_positions))
     
     def count_false_positives(self, hits_positions):
+        ''' Returns the number of False Positives. '''
         # Count type_I_errors
         type_I_errors  = set(hits_positions).difference(set(self.targets))
         if self.motif_n == 1:
@@ -515,6 +524,7 @@ class Genome():
             return n_fp
     
     def count_false_negatives(self, hits_positions):
+        ''' Returns the number of False Negatives. '''
         # Count type_II_errors
         return len(set(self.targets).difference(set(hits_positions)))
     
@@ -559,7 +569,7 @@ class Genome():
             _G = self.G
             x1 = np.repeat(pwm_arrays[0], _G)
             x2 = np.tile(pwm_arrays[1], _G)
-            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            x3 = np.array([self.regulator['connectors'][0].get_score((j - i) % _G) for i in range(_G) for j in range(_G)])
             
             plcm_scores = x1 + x2 + x3
             
@@ -582,7 +592,6 @@ class Genome():
                     # False Negatives Penalty (penalty is 1 per FN)
                     fn_penalty += 1
                     # Extra FN penalty based on the score (between 0 and 1 per FN)
-                    #####fn_penalty += (tr-s)/(tr-s+1)
                     fn_penalty += self.extra_FN_penalty(s, tr)
                 
                 return -(fp_penalty + fn_penalty)
@@ -622,7 +631,15 @@ class Genome():
     
     def extra_FN_penalty(self, score, threshold):
         '''
-        !!! Docstring here ...
+        Extra penalty to apply to false negatives (FNs). FNs are targets with a
+        score below the threshold. Instead of counting as a penalty of just
+        1 point, the extra penalty penalizes FNs even more, based on how far
+        the score of the FN was from reaching the threshold.
+        
+         - As the the score approaches the threshold, the extra penalty
+           approaches 0.
+         - As the difference between the threshold and the score increases, the
+           extra penalty approaches 1.
         '''
         if score == -np.inf:
             return 1
@@ -637,23 +654,6 @@ class Genome():
         # Update ACGT content
         self.acgt[curr_base] -= 1
         self.acgt[new_base] += 1
-    
-    def mutate_with_rate(self):
-        '''
-        Alternative mutation strategy, based on a mutation rate. Instead of one
-        mutation per organism per generation, the number of mutations is a random
-        number that depends on the mutation rate.
-        '''
-        n_mut_bases = np.random.binomial(self.G, self.mut_rate)
-        #n_mut_bases = int(self.G * self.mut_rate)
-        #n_mut_bases = np.random.poisson(self.G * self.mut_rate)
-        if n_mut_bases > 0:
-            mut_bases_positions = random.sample(range(self.G), k=n_mut_bases)
-            for pos in mut_bases_positions:
-                self.mutate_base(pos)
-            
-            if min(mut_bases_positions) < self.get_non_coding_start_pos():
-                self.translate_regulator()
     
     # ==== INDELS ====================
     # ================================
@@ -705,6 +705,23 @@ class Genome():
         if rnd_pos < self.get_non_coding_start_pos():
             self.translate_regulator()
     
+    def mutate_with_rate(self):
+        '''
+        Alternative mutation strategy, based on a mutation rate. Instead of one
+        mutation per organism per generation, the number of mutations is a random
+        number that depends on the mutation rate.
+        '''
+        n_mut_bases = np.random.binomial(self.G, self.mut_rate)
+        #n_mut_bases = int(self.G * self.mut_rate)
+        #n_mut_bases = np.random.poisson(self.G * self.mut_rate)
+        if n_mut_bases > 0:
+            mut_bases_positions = random.sample(range(self.G), k=n_mut_bases)
+            for pos in mut_bases_positions:
+                self.mutate_base(pos)
+            
+            if min(mut_bases_positions) < self.get_non_coding_start_pos():
+                self.translate_regulator()
+    
     def set_acgt_content(self, both_strands=False):
         ''' Sets the `acgt` attribute. '''
         a = self.seq.count('a')
@@ -735,7 +752,7 @@ class Genome():
         '''
         Background frequencies as in "Information Content of Binding Sites on
         Nucleotide Sequences" Schneider, Stormo, Gold, Ehrenfeucht.
-        This is the method used in "Evolution of biological information".
+        This is the method used in "Evolution of biological information" (Schneider, 2000).
         '''
         self.set_acgt_content()  # Update A/C/G/T content
         
@@ -750,26 +767,26 @@ class Genome():
                     Rsequence += freq * (np.log2(freq) - np.log2(bg_freq))
         return Rsequence
     
-    def get_R_sequence_ev_new(self):
-        '''
-        !!! Work in progress ...
+    # def get_R_sequence_ev_new(self):
+    #     '''
+    #     !!! Work in progress ...
         
-        Function that takes into account small sample bias.
-        As described in "Evolution of biological information".
-        '''
-        self.set_acgt_content()  # Update A/C/G/T content
+    #     Function that takes into account small sample bias.
+    #     As described in "Evolution of biological information".
+    #     '''
+    #     self.set_acgt_content()  # Update A/C/G/T content
         
-        Hg = 0
-        for base in self._bases:
-            p = self.acgt[base] / self.G
-            if p != 0:
-                Hg -= p * np.log2(p)
-        # !!!
-        # Skip for now: correction is negligible for large genomes
-        # Hg += e(self.G)
-        Hbefore = Hg * self.motif_len
+    #     Hg = 0
+    #     for base in self._bases:
+    #         p = self.acgt[base] / self.G
+    #         if p != 0:
+    #             Hg -= p * np.log2(p)
+    #     # !!!
+    #     # Skip for now: correction is negligible for large genomes
+    #     # Hg += e(self.G)
+    #     Hbefore = Hg * self.motif_len
         
-        Hafter = 0
+    #     Hafter = 0
         
         
         
@@ -777,11 +794,6 @@ class Genome():
     
     def get_R_frequency(self):
         return -np.log2(self.gamma/(self.G**self.motif_n))
-    
-    # XXX
-    # def get_R_placement(self):
-    #     return xxx
-    
     
     def max_possible_IC(self):
         ''' Maximum information possible for the (composite) motif of the regulator,
@@ -919,7 +931,7 @@ class Genome():
             _G = self.G
             x1 = np.repeat(pwm_arrays[0], _G)
             x2 = np.tile(pwm_arrays[1], _G)
-            x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+            x3 = np.array([self.regulator['connectors'][0].get_score((j - i) % _G) for i in range(_G) for j in range(_G)])
             plcm_scores = x1 + x2 + x3
             
             hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
@@ -975,7 +987,7 @@ class Genome():
         _G = self.G
         x1 = np.repeat(pwm_arrays[0], _G)
         x2 = np.tile(pwm_arrays[1], _G)
-        x3 = np.array([self.regulator['connectors'][0].score((j - i) % _G) for i in range(_G) for j in range(_G)])
+        x3 = np.array([self.regulator['connectors'][0].get_score((j - i) % _G) for i in range(_G) for j in range(_G)])
         plcm_scores = x1 + x2 + x3
         
         hits_indexes = np.argwhere(plcm_scores > self.regulator['threshold']).flatten()
@@ -1028,7 +1040,7 @@ class Genome():
         EH = expected_entropy(self.gamma)
         baseline_info = (2 - EH) * L
         
-        # Rsequence1
+        # Rsequence(1)
         Rseq1 = 0
         for i in range(L):
             obs_bases = [target_seq[i] for target_seq in pwm1_tg_seq]
@@ -1039,7 +1051,7 @@ class Genome():
                     bg_freq = self.acgt[base] / self.G
                     Rseq1 += freq * (np.log2(freq) - np.log2(bg_freq))
         
-        # Rsequence2
+        # Rsequence(2)
         Rseq2 = 0
         for i in range(L):
             obs_bases = [target_seq[i] for target_seq in pwm2_tg_seq]
