@@ -9,6 +9,8 @@ Two classes:
 
 import numpy as np
 import math
+from expected_entropy import entropy
+
 
 
 class ConnectorGauss():
@@ -170,6 +172,16 @@ class ConnectorGauss():
             else:
                 return 0
     
+    def get_conn_entropy(self):
+        smallest_gap = int(self.mu - (self.sigma * self.trunc_z) - 0.5)
+        largest_gap  = int(self.mu + (self.sigma * self.trunc_z) + 0.5)
+        if smallest_gap == largest_gap:
+            return 0
+        probs = []
+        for gap in range(smallest_gap, largest_gap + 1):
+            probs.append(self._norm_pf(gap))
+        return entropy(probs)
+    
 
 
 class ConnectorUnif():
@@ -215,6 +227,10 @@ class ConnectorUnif():
             
     def get_score(self, distance):
         return self.scores[distance]
+    
+    def get_conn_entropy(self):
+        n_gap_vals = self.max_gap - self.min_gap + 1
+        return np.log2(n_gap_vals)
 
 
 

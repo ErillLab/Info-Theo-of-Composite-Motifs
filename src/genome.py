@@ -17,7 +17,7 @@ import pandas as pd
 from Bio import motifs
 
 from connector import ConnectorGauss, ConnectorUnif
-from expected_entropy import expected_entropy
+from expected_entropy import expected_entropy, entropy
 
 
 
@@ -36,9 +36,10 @@ class Genome():
         self.G = config_dict['G']
         self.gamma = config_dict['gamma']
         self.mut_rate = config_dict['mut_rate']
+        self.motif_n = config_dict['motif_n']
         self.motif_len = config_dict['motif_len']
         self.motif_res = config_dict['motif_res']
-        self.motif_n = config_dict['motif_n']
+        self.pseudocounts = config_dict['pseudocounts']
         self.threshold_res = config_dict['threshold_res']
         self.max_threshold = config_dict['motif_len'] * 2
         self.min_threshold = -self.max_threshold
@@ -50,9 +51,7 @@ class Genome():
                 raise ValueError("diad_plcm_map must be a list.")
             else:
                 self._diad_plcm_map = diad_plcm_map
-        
-        self.pseudocounts = 0.01  # XXX Temporarily hardcoded
-        
+                
         self.connector_type = config_dict['connector_type']
         # Gaussian connectors parameters
         self.fix_mu = config_dict['fix_mu']
@@ -73,11 +72,12 @@ class Genome():
         if self.max_right is None:
             self.max_right = self.G
         
+        # Set genome content
         
         self.seq = None
         self.regulator = None
         self.threshold = None
-        self.acgt = None
+        self.acgt = {'a': None, 'c': None, 'g': None, 't': None} 
         
         self._bases = ['a', 'c', 'g', 't']
         self._nucl_to_int = {'a': 0, 'c': 1, 'g': 2, 't': 3}
@@ -100,17 +100,16 @@ class Genome():
         self.G = parent.G
         self.gamma = parent.gamma
         self.mut_rate = parent.mut_rate
+        self.motif_n = parent.motif_n
         self.motif_len = parent.motif_len
         self.motif_res = parent.motif_res
-        self.motif_n = parent.motif_n
+        self.pseudocounts = parent.pseudocounts
         self.threshold_res = parent.threshold_res
         self.max_threshold = parent.max_threshold
         self.min_threshold = parent.min_threshold
         
         if self.motif_n == 2:
             self._diad_plcm_map = parent._diad_plcm_map
-        
-        self.pseudocounts = parent.pseudocounts
         
         self.connector_type = parent.connector_type
         # Gaussian connectors parameters
@@ -126,6 +125,8 @@ class Genome():
         self.fix_right = parent.fix_right
         self.min_left = parent.min_left
         self.max_right = parent.max_right
+        
+        # Set genome content
         
         self.seq = parent.seq
         self.regulator = copy.deepcopy(parent.regulator)
@@ -320,7 +321,7 @@ class Genome():
                     sigma = self._sigma_vals[sigma_idx]
                     '''
                     
-                    # !!! Alternative definition of sigma based on spring constant
+                    # Alternative definition of sigma based on spring constant (k)
                     # 0 <= x <= 5
                     x = 5 * self.nucl_seq_to_int(sigma_locus)/63
                     # 10^-5 <= k <= 1
@@ -534,7 +535,7 @@ class Genome():
     
     def get_fitness_new(self):
         '''
-        !!! Work in progress ...
+        XXX Work in progress ...
         '''
         
         # Scan genome
@@ -620,7 +621,6 @@ class Genome():
                     # False Negatives Penalty (penalty is 1 per FN)
                     fn_penalty += 1
                     # Extra FN penalty based on the score (between 0 and 1 per FN)
-                    #####fn_penalty += (tr-ms)/(tr-ms+1)
                     fn_penalty += self.extra_FN_penalty(ms, tr)
                 
                 return -(fp_penalty + fn_penalty)
@@ -699,9 +699,9 @@ class Genome():
     
     
     def mutate_ev(self):
+        ''' Applyies one and only one mutation (like in the ev program). '''
         rnd_pos = random.randint(0, self.G - 1)
         self.mutate_base(rnd_pos)
-        # !!!
         if rnd_pos < self.get_non_coding_start_pos():
             self.translate_regulator()
     
@@ -728,25 +728,11 @@ class Genome():
         c = self.seq.count('c')
         g = self.seq.count('g')
         t = self.G - (a+c+g)
-        self.acgt = {'a': a, 'c': c, 'g': g, 't': t}   
+        self.acgt = {'a': a, 'c': c, 'g': g, 't': t}
     
-    # def get_R_sequence_old(self):
-    #     '''
-    #     Older version of the function: Background frequencies are fixed at 0.25.
-    #     Check new version of this function: "get_R_sequence_ev".
-    #     '''
-    #     target_sequences = [self.get_seq()[pos:pos+self.motif_len] for pos in self.targets]
-    #     H = 0
-    #     for i in range(self.motif_len):
-    #         obs_bases = [target_seq[i] for target_seq in target_sequences]
-    #         counts = {}
-    #         for base in self._bases:
-    #             counts[base] = obs_bases.count(base)
-    #         frequencies = np.array(list(counts.values()))/sum(counts.values())
-    #         for f in frequencies:
-    #             if f != 0:
-    #                 H -= f * np.log2(f)
-    #     return (2 * self.motif_len) - H    
+    def get_acgt_freqs(self, both_strands=False):
+        ''' Returns a list of the genomic frequencies of the four bases (A,C,G,T). '''
+        return [self.acgt[base] / self.G for base in self._bases]
     
     def get_R_sequence_ev(self):
         '''
@@ -767,32 +753,58 @@ class Genome():
                     Rsequence += freq * (np.log2(freq) - np.log2(bg_freq))
         return Rsequence
     
-    # def get_R_sequence_ev_new(self):
-    #     '''
-    #     !!! Work in progress ...
-        
-    #     Function that takes into account small sample bias.
-    #     As described in "Evolution of biological information".
-    #     '''
-    #     self.set_acgt_content()  # Update A/C/G/T content
-        
-    #     Hg = 0
-    #     for base in self._bases:
-    #         p = self.acgt[base] / self.G
-    #         if p != 0:
-    #             Hg -= p * np.log2(p)
-    #     # !!!
-    #     # Skip for now: correction is negligible for large genomes
-    #     # Hg += e(self.G)
-    #     Hbefore = Hg * self.motif_len
-        
-    #     Hafter = 0
-        
-        
-        
+    def _get_H_sequences(self, sequences):
+        n_seq = len(sequences)
+        if n_seq == 0:
+            return None
+        H = 0
+        L = len(sequences[0])
+        for i in range(L):
+            obs_bases = [seq[i] for seq in sequences]
+            counts = [obs_bases.count(base) for base in self._bases]  # XXX Optimize this line of code
+            H += entropy(counts)
+        return H
         
     
+    def get_R_sequence_ev_new(self, sequences):
+        '''
+        !!! Work in progress ...
+        
+        Function that takes into account small sample bias.
+        As described in "Evolution of biological information".
+        '''
+        
+        if len(sequences) == 0:
+            return None
+        
+        # Hg = 0
+        # for base in self._bases:
+        #     p = self.acgt[base] / self.G
+        #     if p != 0:
+        #         Hg -= p * np.log2(p)
+        
+        ###Hbefore = Hg * self.motif_len
+        
+        
+        EH = expected_entropy(self.gamma, self.get_acgt_freqs())  # !!! Check
+        
+        
+        # Definition of Rsequence as in Equation (6) in "Information Content of
+        # Binding Sites on Nucleotide Sequences" (Schneider, 1986)
+        # Instead of the sum over L differences, here it's computed as the
+        # difference between the total EH (over the L positions) and the total
+        # Hs (over the L positions).
+        return (EH * len(sequences[0])) - self._get_H_sequences(sequences)
+    
+    def get_R_spacer(self, gaps):
+        ''' Returns R_spacer (calculated as H_before - H_after). '''
+        return np.log2(self.G) - entropy(list(collections.Counter(gaps).values()))
+    
+    def get_R_connector(self, conn_idx):
+        return np.log2(self.G) - self.regulator['connectors'][conn_idx].get_conn_entropy()
+    
     def get_R_frequency(self):
+        ''' Returns R_frequency according to our generalized framework. '''
         return -np.log2(self.gamma/(self.G**self.motif_n))
     
     def max_possible_IC(self):
@@ -998,12 +1010,14 @@ class Genome():
                 
                 # Save (empty) IC report
                 ic_report = pd.DataFrame(
-                    {'Rseq1': [0, 0],
-                     'Rseq2': [0, 0],
-                     'Rspacer': [0, 0],
-                     'Rtot': [0, 0],
-                     'Rfrequency': [self.get_R_frequency(), self.get_R_frequency()]})
-                ic_report.index = ['corrected', 'uncorrected']
+                    {'Rseq1': [None] * 4,
+                     'Rseq2': [None] * 4,
+                     'Rspacer': [None] * 4,
+                     'Rconnector': [None] * 4,
+                     'Rtot': [None] * 4,
+                     'Reffective': [None] * 4,
+                     'Rfrequency': [self.get_R_frequency()] * 4})
+                ic_report.index = ['true_def', 'corrected', 'corrected_unif', 'uncorrected']
                 ic_report.to_csv(outfilepath + '_ic_report.csv')
                 
                 # Save (empty) Gaps report
@@ -1032,63 +1046,89 @@ class Genome():
         pwm2_tg_pos = [e[1] for e in elements_pos]
         pwm2_tg_seq = [self.get_seq()[pos:pos+L] for pos in pwm2_tg_pos]
         
+        
         # R_sequence
+        Rseq1_true = self.get_R_sequence_ev_new(pwm1_tg_seq)
+        Rseq2_true = self.get_R_sequence_ev_new(pwm2_tg_seq)
+        
+        
+        EH = expected_entropy(self.gamma, self.get_acgt_freqs())
+        baseline_info = (2 - EH) * L
         
         # !!! NOT EXACTLY CORRECT:
         #     This is using base probabilities 25% each
         #     (they may change throughout the simulation)
-        EH = expected_entropy(self.gamma)
-        baseline_info = (2 - EH) * L
+        EH_unif = expected_entropy(self.gamma)
+        baseline_info_unif = (2 - EH_unif) * L
         
-        # Rsequence(1)
-        Rseq1 = 0
-        for i in range(L):
-            obs_bases = [target_seq[i] for target_seq in pwm1_tg_seq]
-            
-            for base in self._bases:
-                freq = obs_bases.count(base) / len(obs_bases)
-                if freq != 0:
-                    bg_freq = self.acgt[base] / self.G
-                    Rseq1 += freq * (np.log2(freq) - np.log2(bg_freq))
         
-        # Rsequence(2)
-        Rseq2 = 0
-        for i in range(L):
-            obs_bases = [target_seq[i] for target_seq in pwm2_tg_seq]
-            
-            for base in self._bases:
-                freq = obs_bases.count(base) / len(obs_bases)
-                if freq != 0:
-                    bg_freq = self.acgt[base] / self.G
-                    Rseq2 += freq * (np.log2(freq) - np.log2(bg_freq))
+        if len(pwm1_tg_seq) == 0:
+            Rseq1 = None
+        else:
+            # Rsequence(1)
+            Rseq1 = 0
+            for i in range(L):
+                obs_bases = [target_seq[i] for target_seq in pwm1_tg_seq]
+                
+                for base in self._bases:
+                    freq = obs_bases.count(base) / len(obs_bases)
+                    if freq != 0:
+                        bg_freq = self.acgt[base] / self.G
+                        Rseq1 += freq * (np.log2(freq) - np.log2(bg_freq))
+        
+        if len(pwm2_tg_seq) == 0:
+            Rseq1 = None
+        else:
+            # Rsequence(2)
+            Rseq2 = 0
+            for i in range(L):
+                obs_bases = [target_seq[i] for target_seq in pwm2_tg_seq]
+                
+                for base in self._bases:
+                    freq = obs_bases.count(base) / len(obs_bases)
+                    if freq != 0:
+                        bg_freq = self.acgt[base] / self.G
+                        Rseq2 += freq * (np.log2(freq) - np.log2(bg_freq))
+        
+        if len(pwm1_tg_seq) != 0:
+            if Rseq1_true != Rseq1-baseline_info:
+                print('>>>>>>>\t(1)\t', Rseq1_true, '\t', Rseq1-baseline_info)
+        if len(pwm2_tg_seq) != 0:
+            if Rseq2_true != Rseq2-baseline_info:
+                print('>>>>>>>\t(2)\t', Rseq2_true, '\t', Rseq2-baseline_info)
         
         # Rspacer
+        # XXX Make a 'get_R_spacer' function
         gaps = [(r - l) % _G - L for l, r in elements_pos]
-        counter = collections.Counter(gaps)
-        gap_counts = np.array(list(counter.values()))
-        gap_freqs = gap_counts / len(gaps)
-        gap_H = - sum([f * np.log2(f) for f in gap_freqs])
-        Rspacer = np.log2(_G) - gap_H
+        Hspacer = entropy(list(collections.Counter(gaps).values()))
+        Rspacer = np.log2(_G) - Hspacer
+        if Hspacer != self.get_R_spacer(gaps):
+            raise ValueError('GAPS: Something is different')
         
-        # IC report
-        # print('  Rseq1 + Rseq2 + Rspacer =\n= {:.3f} + {:.3f} + {:.3f}   = {:.3f}  ~  {} = Rfreq\n'.format(
-        #     Rseq1-baseline_info, Rseq2-baseline_info, Rspacer,
-        #     Rseq1-baseline_info + Rseq2-baseline_info + Rspacer, self.get_R_frequency()))
+        Rspacer = self.get_R_spacer(gaps)
+        
+        # Rconnector
+        # Hconnector = self.regulator['connectors'][0].get_conn_entropy()
+        # Rconnector =  np.log2(_G) - Hconnector
+        Rconnector = self.get_R_connector(0)
         
         # Save IC report
         if outfilepath:
             ic_report = pd.DataFrame(
-                {'Rseq1': [Rseq1-baseline_info, Rseq1],
-                 'Rseq2': [Rseq2-baseline_info, Rseq2],
-                 'Rspacer': [Rspacer, Rspacer],
-                 'Rtot': [Rseq1+Rseq2+Rspacer-(2*baseline_info), Rseq1+Rseq2+Rspacer],
-                 'Rfrequency': [self.get_R_frequency(), self.get_R_frequency()]})
-            ic_report.index = ['corrected', 'uncorrected']
+                {'Rseq1': [Rseq1_true, Rseq1-baseline_info, Rseq1-baseline_info_unif, Rseq1],
+                 'Rseq2': [Rseq2_true, Rseq2-baseline_info, Rseq2-baseline_info_unif, Rseq2],
+                 'Rspacer': [Rspacer] * 4,
+                 'Rconnector': [Rconnector] * 4})
+            ic_report['Rtot']       = ic_report['Rseq1'] + ic_report['Rseq2'] + ic_report['Rspacer']
+            ic_report['Reffective'] = ic_report['Rseq1'] + ic_report['Rseq2'] + ic_report['Rconnector']
+            ic_report['Rfrequency'] = [self.get_R_frequency()] * 4
+                 # 'Rtot': [Rseq1_true+Rseq2_true+Rspacer,
+                 #          Rseq1+Rseq2+Rspacer-(2*baseline_info),
+                 #          Rseq1+Rseq2+Rspacer-(2*baseline_info_unif),
+                 #          Rseq1+Rseq2+Rspacer],
+                 # 'Rfrequency': [self.get_R_frequency()] * 4 })
+            ic_report.index = ['true_def', 'corrected', 'corrected_unif', 'uncorrected']
             ic_report.to_csv(outfilepath + '_ic_report.csv')
-        
-        # Gaps report
-        # print('Gaps: {}\nConnector: mu={}, sigma={}\n'.format(
-        #     gaps, self.regulator['connectors'][0].mu, self.regulator['connectors'][0].sigma))
         
         # Save gaps report
         if outfilepath:
