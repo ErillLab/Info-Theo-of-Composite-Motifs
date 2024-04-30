@@ -5,13 +5,9 @@ import time
 import random
 import numpy as np
 import json
-#import time
-#import matplotlib.pyplot as plt
-#import copy
 import os
 
 from genome import Genome
-#from expected_entropy import expected_entropy
 
 
 
@@ -187,13 +183,13 @@ def main():
             sorted_pop.append(org)
             sorted_fit.append(fitness)
         best_fitness = sorted_fit[0]
-        print('sorted_fit:', sorted_fit)
+        #print('sorted_fit:', sorted_fit)
         print('\tMax Fitness:', best_fitness)
         
         
         mus = [int(org.regulator['connectors'][0].mu) for org in population]
         mus.sort()
-        print('mu   :\n', mus)
+        #print('mu   :\n', mus)
         sigmas = [int(100 * org.regulator['connectors'][0].sigma)/100 for org in population]
         sigmas.sort()
         print('sigma:\n', sigmas)
@@ -275,8 +271,9 @@ def main():
             #population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
             population = good + reproduce(good[:-n_ties]) + bad[:n_ties]
         
+        
         if motif_n == 2:
-            # Save earliest solution
+            # Export earliest solution
             if best_fitness == 0 and not solution_gen:
                 org = population[0]
                 org.export(results_dirpath + 'gen_{}_org.json'.format(gen))
@@ -296,7 +293,6 @@ def main():
                     org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
                     # IC report (CSV) and Gaps report (JSON)
                     org.study_diad(results_dirpath + 'ev_gen_{}'.format(gen))
-                    solution_gen = gen
     
     # Export latest solution
     if solution_gen:
