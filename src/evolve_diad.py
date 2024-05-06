@@ -10,7 +10,7 @@ Developing AUPRC-based fitness function.
 #import cProfile
 import time
 import random
-import numpy as np
+#import numpy as np
 import json
 import os
 
@@ -30,9 +30,15 @@ def check_settings(config_dict):
     if config_dict['run_mode'] not in ['serial', 'parallel']:
         raise ValueError("run_mode should be 'serial' or 'parallel'.")
     
+    # Check `fitness_mode`
+    if config_dict['fitness_mode'].lower() not in ['errors_penalty', 'auprc']:
+        raise ValueError("fitness_mode should be 'errors_penalty' or 'auprc'.")
+    
     # Check `targets_type`
     if config_dict['targets_type'] not in ['placements', 'centroids']:
         raise ValueError("targets_type should be 'placements' or 'centroids'.")
+    if config_dict['motif_n'] == 1 and config_dict['targets_type'] == 'centroids':
+        raise ValueError("targets_type can be set to 'centroids' only when motif_n > 1.")
     
     # Check `spacers`
     if not isinstance(config_dict['spacers'], list):
@@ -63,16 +69,24 @@ def generate_diad_plcm_map(config_dict):
     For a dimeric TF there are G^2 possible placements (because each of the two
     elements of the diad can be in G positions). Each of the G^2 possible diad
     placements has a centroid, i.e. the center of the placement (rounded down
-    when it is in between two genomic positions). This function returns:
+    when it is in between two genomic positions).
     
-    plcm_idx_to_gnom_pos : list (of G^2 integers)
-        Maps the i-th diad placement to the position of its centroid.
-        The i-th element in the list stores the centroid position.
-        
-    gnom_pos_to_plcm_idx : list (of G lists)
-        Maps each genomic position to the list of all the diad placements that
-        have that genomic position as centroid. The diad placements are identified
-        by their index [from 0 to (G^2)-1].
+    This function returns a dictionary that has two elements:
+    
+    (1) KEY:
+            "plcm_idx_to_gnom_pos" : string
+        VALUE:
+            plcm_idx_to_gnom_pos : list (of G^2 integers)
+                Maps the i-th diad placement to the position of its centroid.
+                The i-th element in the list stores the centroid position.
+    
+    (2) KEY:
+            "gnom_pos_to_plcm_idx" : string
+        VALUE:
+            `gnom_pos_to_plcm_idx` : list (of G lists)
+                Maps each genomic position to the list of all the diad placements
+                that have that genomic position as centroid. The diad placements
+                are identified by their index [from 0 to (G^2)-1].
     '''
     # Map diad placement indexes to genomic position of centroid
     G = config_dict['G']
@@ -87,7 +101,8 @@ def generate_diad_plcm_map(config_dict):
         pos = int((x + y + mot_len)/2) % G
         plcm_idx_to_gnom_pos.append(pos)
         gnom_pos_to_plcm_idx[pos].append(idx)
-    return plcm_idx_to_gnom_pos, gnom_pos_to_plcm_idx
+    return {'plcm_idx_to_gnom_pos': plcm_idx_to_gnom_pos,
+            'gnom_pos_to_plcm_idx': gnom_pos_to_plcm_idx}
 
 def reproduce(organisms):
     ''' The Genome objects in `organisms` (a list) are cloned, and the clones
@@ -106,6 +121,14 @@ def end_run(gen, solution_gen, drift_time, max_n_gen):
         # Stop if no solution is found before `max_n_gen`
         return gen > max_n_gen
 
+def is_max_fitness(fitness, fitness_mode):
+    ''' Returns True if `fitness` is the maximum possible fitness (perfect classifier). '''
+    if fitness_mode == 'errors_penalty':
+        return fitness == 0
+    elif fitness_mode.lower() == 'auprc':
+        return fitness == 1
+    else:
+        raise ValueError("fitness_mode should be 'errors_penalty' or 'auprc'.")
 
 def main():
     
@@ -133,32 +156,34 @@ def main():
     results_dirpath = '../results/' + run_tag + '/'
     os.makedirs(results_dirpath, exist_ok=True)
     
-    gnom_pos_to_plcm_idx = None
-    if motif_n == 2:
-        if config_dict['targets_type'] == 'centroids':
-            # Map diad placement indexes to genomic position of centroid
-            gnom_pos_to_plcm_idx = generate_diad_plcm_map(config_dict)[1]
-        elif config_dict['targets_type'] == 'placements':
-            gnom_pos_to_plcm_idx = []
-        else:
-            raise ValueError("'targets_type' must be 'centroids' or 'placements'.")
-        
+    # Save the settings for this run
+    with open(results_dirpath + 'parameters.json', 'w') as f:
+        json.dump(config_dict, f)
     
-    # Initialize population
-    population = [Genome(config_dict, gnom_pos_to_plcm_idx) for i in range(pop_size)]
+    if motif_n == 2:
+        # Map diad placement indexes to genomic position of centroid
+        diad_plcm_map = generate_diad_plcm_map(config_dict)
+    else:
+        diad_plcm_map = None    
+    
+    # INITIALIZE POPULATION
+    population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
     
     
     # START EVOLUTIONARY SIMULATION
-    
+    '''
     min_Rseq_list = []
     avg_Rseq_list = []
     max_Rseq_list = []
     best_org_Rseq_list = []
     best_org_Rseq_ev_list = []
+    '''
+    
     solution_gen = None
     
     drift_time = config_dict['drift_time']
     max_n_gen = config_dict['max_n_gen']
+    fitness_mode = config_dict['fitness_mode']
     
     gen = 0
     
@@ -178,8 +203,7 @@ def main():
         for org in population:
             #org.mutate_with_rate()
             org.mutate_ev()
-            #fitness_list.append(org.get_fitness())
-            fitness_list.append(org.get_fitness_new())
+            fitness_list.append(org.get_fitness())
         
         # Sort population based on fitness (descending: from best to worst)
         ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
@@ -190,60 +214,61 @@ def main():
             sorted_pop.append(org)
             sorted_fit.append(fitness)
         best_fitness = sorted_fit[0]
-        #print('sorted_fit:', sorted_fit)
-        print('\tMax Fitness:', best_fitness)
+        # print('sorted_fit:', sorted_fit)
+        print('\tBest organism:')
+        print('\t\tfitness =', best_fitness)
+        if motif_n == 2:
+            bc = sorted_pop[0].regulator['connectors'][0]
+            print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
         
         
-        mus = [int(org.regulator['connectors'][0].mu) for org in population]
-        mus.sort()
-        #print('mu   :\n', mus)
-        sigmas = [int(100 * org.regulator['connectors'][0].sigma)/100 for org in population]
-        sigmas.sort()
-        print('sigma:\n', sigmas)
+        # left_list = [int(org.regulator['connectors'][0].min_gap) for org in population]
+        # right_list = [int(org.regulator['connectors'][0].max_gap) for org in population]
+        # rev = 0
+        # ok = 0
+        # for n_org in range(len(left_list)):
+        #     if left_list[n_org] > right_list[n_org]:
+        #         rev += 1
+        #     else:
+        #         ok += 1
+        # #print('rev: {}, ok: {}'.format(rev, ok))
+        # print('Best range: [{}, {}]'.format(sorted_pop[0].regulator['connectors'][0].min_gap,
+        #                                     sorted_pop[0].regulator['connectors'][0].max_gap))
         
         
         
         '''
-        left_list = [int(org.regulator['connectors'][0].min_gap) for org in population]
-        right_list = [int(org.regulator['connectors'][0].max_gap) for org in population]
-        rev = 0
-        ok = 0
-        for n_org in range(len(left_list)):
-            if left_list[n_org] > right_list[n_org]:
-                rev += 1
-            else:
-                ok += 1
-        #print('rev: {}, ok: {}'.format(rev, ok))
-        print('Best range: [{}, {}]'.format(sorted_pop[0].regulator['connectors'][0].min_gap,
-                                            sorted_pop[0].regulator['connectors'][0].max_gap))
-        '''
+        # If target placement are pre-defined, keep track of Rseq through time
+        # --------------------------------------------------------------------
         
-        # If the model is a single motif, keep track of Rseq through time
-        # ---------------------------------------------------------------
-        if motif_n == 1:
-            R_seq_list = [org.get_R_sequence_ev() for org in sorted_pop]
-            
-            # R_seq of all the organisms with best fitness: `best_organisms_R_seq`
-            
-            # Index of the last organism that has fitness equal to `best_fitness`
-            rev_idx = sorted_fit[::-1].index(best_fitness)
-            if rev_idx == 0:
-                # all organisms are 'best organism'
-                best_organisms_R_seq = R_seq_list[:]
-            else:
-                best_organisms_R_seq = R_seq_list[:-rev_idx]
-            
-            print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
-            print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
-            print('\tR_frequency:\t', org.get_R_frequency())
-            
+        if config_dict['targets_type'] == 'placements':
             if update_period:
                 if gen % update_period == 0:
-                    min_Rseq_list.append(np.array(R_seq_list).min())
-                    avg_Rseq_list.append(np.array(R_seq_list).mean())
-                    max_Rseq_list.append(np.array(R_seq_list).max())
-                    best_org_Rseq_list.append(np.mean(best_organisms_R_seq))
-                    best_org_Rseq_ev_list.append(R_seq_list[0])
+                    
+                    R_seq_list = [org.get_R_sequence_ev() for org in sorted_pop]
+                    
+                    # R_seq of all the organisms with best fitness: `best_organisms_R_seq`
+                    
+                    # Index of the last organism that has fitness equal to `best_fitness`
+                    rev_idx = sorted_fit[::-1].index(best_fitness)
+                    if rev_idx == 0:
+                        # all organisms are 'best organism'
+                        best_organisms_R_seq = R_seq_list[:]
+                    else:
+                        best_organisms_R_seq = R_seq_list[:-rev_idx]
+                    
+                    print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
+                    print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
+                    print('\tR_frequency:\t', org.get_R_frequency())
+                    
+                    if update_period:
+                        if gen % update_period == 0:
+                            min_Rseq_list.append(np.array(R_seq_list).min())
+                            avg_Rseq_list.append(np.array(R_seq_list).mean())
+                            max_Rseq_list.append(np.array(R_seq_list).max())
+                            best_org_Rseq_list.append(np.mean(best_organisms_R_seq))
+                            best_org_Rseq_ev_list.append(R_seq_list[0])
+        '''
         
         # Selection
         # ---------
@@ -278,38 +303,36 @@ def main():
             #population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
             population = good + reproduce(good[:-n_ties]) + bad[:n_ties]
         
-        
-        if motif_n == 2:
-            # Export earliest solution
-            if best_fitness == 0 and not solution_gen:
+        # Store results
+        # -------------
+        if update_period:
+            if gen % update_period == 0:
                 org = population[0]
-                org.export(results_dirpath + 'gen_{}_org.json'.format(gen))
-                org.print_genome_map(results_dirpath + 'gen_{}_map.txt'.format(gen))
+                org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
+                org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
                 # IC report (CSV) and Gaps report (JSON)
-                org.study_diad(results_dirpath + 'gen_{}'.format(gen))
-                solution_gen = gen
-                
-                # Save the settings for this run
-                with open(results_dirpath + 'parameters.json', 'w') as f:
-                    json.dump(config_dict, f)
-            
-            if update_period:
-                if gen % update_period == 0:
-                    org = population[0]
-                    org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
-                    org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
-                    # IC report (CSV) and Gaps report (JSON)
-                    org.study_diad(results_dirpath + 'ev_gen_{}'.format(gen))
+                org.study_info(results_dirpath + 'ev_gen_{}'.format(gen))
+        
+        # Export earliest solution
+        if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
+            org = population[0]
+            org.export(results_dirpath + 'sol_first_gen_{}_org.json'.format(gen))
+            org.print_genome_map(results_dirpath + 'sol_first_gen_{}_map.txt'.format(gen))
+            # IC report (CSV) and Gaps report (JSON)
+            org.study_info(results_dirpath + 'sol_first_gen_{}'.format(gen))
+            solution_gen = gen
     
     # Export latest solution
     if solution_gen:
         org = population[0]
-        org.export(results_dirpath + 'gen_{}_org.json'.format(gen))
-        org.print_genome_map(results_dirpath + 'gen_{}_map.txt'.format(gen))
+        org.export(results_dirpath + 'sol_latest_gen_{}_org.json'.format(gen))
+        org.print_genome_map(results_dirpath + 'sol_latest_gen_{}_map.txt'.format(gen))
         # IC report (CSV) and Gaps report (JSON)
-        org.study_diad(results_dirpath + 'gen_{}'.format(gen))
+        org.study_info(results_dirpath + 'sol_latest_gen_{}'.format(gen))
         print('\nDone. Results in ', results_dirpath)
     else:
+        for filename in os.listdir(results_dirpath):
+            os.remove(results_dirpath + filename)
         os.rmdir(results_dirpath)
         print('{}: No solution obtained.'.format(results_dirpath))
 
