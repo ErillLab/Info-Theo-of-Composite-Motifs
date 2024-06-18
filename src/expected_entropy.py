@@ -48,6 +48,8 @@ def expected_entropy(n, base_probabilities=[0.25, 0.25, 0.25, 0.25]):
         Expected value of bits per position.
 
     '''
+    if n == 0:
+        return None
     
     # Generate multinoial model
     rv = multinomial(n, base_probabilities)
