@@ -553,15 +553,16 @@ for key in all_ev.keys():
     ev_runs.append(df)
 
 
-
-for i in range(16):
+subdir = 'Unif_16sites_Evo_Stack_Rconn'
+for i in range(len(ev_runs)):
     df = ev_runs[i]
     df = df.iloc[:25,:]
     plt.stackplot(list(range(len(df))), df['Rseq1_targets'], df['Rseq2_targets'],
                   df['Rconnector'], baseline ='zero')
     plt.hlines(df['Rfrequency'], xmin=0, xmax=len(df), color='red')
     plt.ylim((0, max_possible_diad_IC(parameters['G'], parameters['motif_len'])))
-    plt.savefig('Gauss_9sites_Evo_Stack_Rconn/Evo_Stack_Rconn_Run_{}.png'.format(i))
+    outfilepath = '../results/AUPRC_fitness/{}/Evo_Stack_Rconn_Run_{}.png'.format(subdir, i)
+    plt.savefig(outfilepath)
     plt.close()
 
 # ev Rspacer VS Rconnector

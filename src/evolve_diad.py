@@ -124,7 +124,25 @@ def sort_pop_by_fit(population):
 
 def export_org_data(org, gen, results_dirpath, files_tag=''):
     '''
-    !!! Docstring here ...
+    Save output files for the organism `org` into the `results_dirpath` folder.
+    Four files are generated:
+        - *_gaps_report.json
+        - *_ic_report.csv
+        - *_map.txt
+        - *_org.json
+
+    Parameters
+    ----------
+    org : object of the Genome class
+        Organism to be saved.
+    gen : int
+        Generation number. Used to define the file names.
+    results_dirpath : str
+        Path of the directory where output files will be saved.
+    files_tag : str, optional
+        This tag can be used to easily identify output files from special
+        circumstances. For example, the tag "sol_latest_" can be used when
+        saving the last organism of the run. The default is '' (no tag).
     '''
     # Each output file path starts with the following string
     path_start = os.path.join(results_dirpath, '{}_gen_{}'.format(files_tag, gen))

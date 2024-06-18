@@ -382,9 +382,7 @@ class Genome():
                           'threshold': threshold}
     
     def set_targets(self):
-        '''
-        XXX Update docstring ...
-        
+        '''        
         Sets the `targets` attribute (as a list of length self.gamma).
         It also calls the `_set_targets_binary` function, which sets the
         `targets_binary` attribute.
@@ -980,12 +978,11 @@ class Genome():
         else:
             return out_dict
     
-    # XXX
     def idx_to_seq(self, indexes):
         '''
-        !!! Complete docstring here ...
-            ...    ...
-        
+        Returns a list of sequences (when motif_n = 1) or pairs of sequences
+        (when motif_n = 2). Each element of the returned list corresponds to
+        one index in the `indexes` input list.
         
         indexes : list
             - If the regulator is monomeric (motif_n = 1), each index is the
@@ -1036,22 +1033,20 @@ class Genome():
     def _add_diad_plcm_line(self, outlist, elements_pos, elements_idx):
         '''
         Called by `print_genome_map`. Adds one line of characters to the output.
-        Writes characters in the write positions of `outlist` (list of characters)
+        Writes characters in the right positions of `outlist` (list of characters)
         if it finds space characters. Otherwise, it doesn't overwrite the characters
-        found at those positions. The info about the elements that were supposed
+        found at those positions: the info about the elements that were supposed
         to be written into `outlist` will rather be saved into `leftovers` and
         `leftovers_idx` (will be displayed in the next line of the output).
         
-        elements_pos : tuple of two integers
-            - start position of the left element of the diad
-            - start position of the right element of the diad
+        elements_pos : list
+            Each element of the list is a tuple of two integers
+                - start position of the left element of the diad
+                - start position of the right element of the diad
         
-        elements_idx
-        
-            ...
-        !!! ... ... ...
-            ...
-        
+        elements_idx : list
+            Each element of the list is an index (int) for the diad placement
+            to be displayed.
         '''
         leftovers = []
         leftovers_idx = []
