@@ -109,6 +109,31 @@ def reproduce(organisms):
     (a list) are returned. '''
     return [Genome(clone=parent) for parent in organisms]
 
+def sort_pop_by_fit(population):
+    ''' Sorts population based on fitness (descending: from best to worst). Returns
+    the sorted population and the corresponding (sorted) list of fitness values. '''
+    
+    fitness_list = [org.get_fitness() for org in population]
+    ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
+    sorted_pop = []
+    sorted_fit = []
+    for fitness, org in ranking:
+        sorted_pop.append(org)
+        sorted_fit.append(fitness)
+    return sorted_pop, sorted_fit
+
+def export_org_data(org, gen, results_dirpath, files_tag=''):
+    '''
+    !!! Docstring here ...
+    '''
+    # Each output file path starts with the following string
+    path_start = os.path.join(results_dirpath, '{}_gen_{}'.format(files_tag, gen))
+    # Save files into `results_dirpath`
+    org.export(path_start + '_org.json')
+    org.print_genome_map(path_start + '_map.txt')
+    # IC report (CSV) and Gaps report (JSON)
+    org.study_info(path_start, gen)
+
 def end_run(gen, solution_gen, drift_time, max_n_gen):
     ''' Returns True if the run reached the end (according to input parameters).
     Returns False otherwise. '''
@@ -151,6 +176,9 @@ def main():
     pop_size = config_dict['pop_size']
     motif_n = config_dict['motif_n']
     update_period = config_dict['update_period']
+    drift_time = config_dict['drift_time']
+    max_n_gen = config_dict['max_n_gen']
+    fitness_mode = config_dict['fitness_mode']
     
     # Results directory
     results_dirpath = '../results/' + run_tag + '/'
@@ -169,7 +197,6 @@ def main():
     # INITIALIZE POPULATION
     population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
     
-    
     # START EVOLUTIONARY SIMULATION
     '''
     min_Rseq_list = []
@@ -180,12 +207,12 @@ def main():
     '''
     
     solution_gen = None
-    
-    drift_time = config_dict['drift_time']
-    max_n_gen = config_dict['max_n_gen']
-    fitness_mode = config_dict['fitness_mode']
-    
     gen = 0
+    
+    # Save initial results for Generation 0
+    print("\nGen:", gen)
+    sorted_pop, sorted_fit = sort_pop_by_fit(population)
+    export_org_data(sorted_pop[0], gen, results_dirpath, 'ev')
     
     while not end_run(gen, solution_gen, drift_time, max_n_gen):
         
@@ -195,16 +222,23 @@ def main():
         # Avoid second-order selection towards higher IC than necessary
         random.shuffle(population)
         
+        '''
         fitness_list = []
         R_seq_list = []
+        '''
         
-        # Mutation and fitness evaluation
-        # -------------------------------
+        # Mutation 
+        # --------
         for org in population:
             #org.mutate_with_rate()
             org.mutate_ev()
-            fitness_list.append(org.get_fitness())
+            ###fitness_list.append(org.get_fitness())
         
+        # Fitness evaluation
+        # ------------------
+        sorted_pop, sorted_fit = sort_pop_by_fit(population)
+        
+        '''
         # Sort population based on fitness (descending: from best to worst)
         ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
         
@@ -213,13 +247,16 @@ def main():
         for fitness, org in ranking:
             sorted_pop.append(org)
             sorted_fit.append(fitness)
+        '''
+        
         best_fitness = sorted_fit[0]
         # print('sorted_fit:', sorted_fit)
         print('\tBest organism:')
         print('\t\tfitness =', best_fitness)
-        if motif_n == 2:
+        if motif_n == 2 and config_dict['connector_type']=='gaussian':
             bc = sorted_pop[0].regulator['connectors'][0]
             print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
+        
         
         
         # left_list = [int(org.regulator['connectors'][0].min_gap) for org in population]
@@ -297,38 +334,47 @@ def main():
         
         # Replacement of bad organisms with good organisms
         if n_ties == 0:
-            #population = good + copy.deepcopy(good)
             population = good + reproduce(good)
         else:
-            #population = good + copy.deepcopy(good[:-n_ties]) + bad[:n_ties]
             population = good + reproduce(good[:-n_ties]) + bad[:n_ties]
         
         # Store results
         # -------------
         if update_period:
             if gen % update_period == 0:
-                org = population[0]
-                org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
-                org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
-                # IC report (CSV) and Gaps report (JSON)
-                org.study_info(results_dirpath + 'ev_gen_{}'.format(gen))
+                
+                export_org_data(population[0], gen, results_dirpath, 'ev')
+                
+                # org = population[0]
+                # org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
+                # org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
+                # # IC report (CSV) and Gaps report (JSON)
+                # org.study_info(results_dirpath + 'ev_gen_{}'.format(gen), gen)
         
         # Export earliest solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
-            org = population[0]
-            org.export(results_dirpath + 'sol_first_gen_{}_org.json'.format(gen))
-            org.print_genome_map(results_dirpath + 'sol_first_gen_{}_map.txt'.format(gen))
-            # IC report (CSV) and Gaps report (JSON)
-            org.study_info(results_dirpath + 'sol_first_gen_{}'.format(gen))
+            
+            export_org_data(population[0], gen, results_dirpath, 'sol_first')
+            
+            # org = population[0]
+            # org.export(results_dirpath + 'sol_first_gen_{}_org.json'.format(gen))
+            # org.print_genome_map(results_dirpath + 'sol_first_gen_{}_map.txt'.format(gen))
+            # # IC report (CSV) and Gaps report (JSON)
+            # org.study_info(results_dirpath + 'sol_first_gen_{}'.format(gen), gen)
+            
             solution_gen = gen
     
     # Export latest solution
     if solution_gen:
-        org = population[0]
-        org.export(results_dirpath + 'sol_latest_gen_{}_org.json'.format(gen))
-        org.print_genome_map(results_dirpath + 'sol_latest_gen_{}_map.txt'.format(gen))
-        # IC report (CSV) and Gaps report (JSON)
-        org.study_info(results_dirpath + 'sol_latest_gen_{}'.format(gen))
+        
+        export_org_data(population[0], gen, results_dirpath, 'sol_latest')
+        
+        # org = population[0]
+        # org.export(results_dirpath + 'sol_latest_gen_{}_org.json'.format(gen))
+        # org.print_genome_map(results_dirpath + 'sol_latest_gen_{}_map.txt'.format(gen))
+        # # IC report (CSV) and Gaps report (JSON)
+        # org.study_info(results_dirpath + 'sol_latest_gen_{}'.format(gen), gen)
+        
         print('\nDone. Results in ', results_dirpath)
     else:
         for filename in os.listdir(results_dirpath):

@@ -1167,7 +1167,7 @@ class Genome():
         # Print to standard output
         print(out_string)
     
-    def study_info(self, outfilepath=None):
+    def study_info(self, outfilepath=None, gen=None):
         
         if self.motif_n > 2:
             raise ValueError("To be coded.")
@@ -1237,6 +1237,10 @@ class Genome():
             df.to_csv(outfilepath + '_ic_report.csv')
         
         elif self.motif_n == 2:
+            if self.connector_type == 'gaussian':
+                sigma = self.regulator['connectors'][0].sigma
+            else:
+                sigma = None
             df = pd.DataFrame(
                 {'Rseq1_targets': tg_cols[0],
                  'Rseq1_hits': hit_cols[0],
@@ -1244,7 +1248,9 @@ class Genome():
                  'Rseq2_hits': hit_cols[1],
                  'Rspacer_targets': [tg_Rspacer] * 4,
                  'Rspacer_hits': [hit_Rspacer] * 4,
-                 'Rconnector': [self.get_R_connector()] * 4})
+                 'Rconnector': [self.get_R_connector()] * 4,
+                 'connector_sigma': [sigma] * 4,
+                 'generation': [gen] * 4})
             df['Rtot'] = df['Rseq1_targets'] + df['Rseq2_targets'] + df['Rspacer_targets']
             df['Reffective'] = df['Rseq1_targets'] + df['Rseq2_targets'] + df['Rconnector']
             df['Rfrequency'] = [self.get_R_frequency()] * 4
@@ -1255,9 +1261,6 @@ class Genome():
             # Save gaps report
             with open(outfilepath + '_gaps_report.json', 'w') as f:
                 json.dump([int(gap) for gap in hits_spacers], f)
-        
-        
-        
         
         
         
