@@ -3,6 +3,9 @@
 
 Evolve transcriptional regulatory system.
 
+DEVELOPING BRANCH:
+    "sequential_wiring"
+
 '''
 
 
