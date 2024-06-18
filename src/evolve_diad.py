@@ -1,19 +1,16 @@
 
 '''
 
-Developing AUPRC-based fitness function.
+Evolve transcriptional regulatory system.
 
 '''
-
 
 
 #import cProfile
 import time
 import random
-#import numpy as np
 import json
 import os
-
 from genome import Genome
 
 
@@ -173,7 +170,11 @@ def is_max_fitness(fitness, fitness_mode):
     else:
         raise ValueError("fitness_mode should be 'errors_penalty' or 'auprc'.")
 
+
 def main():
+    '''
+    Main function that implements the evolutionary simulation.
+    '''
     
     # SET UP
     
@@ -240,32 +241,15 @@ def main():
         # Avoid second-order selection towards higher IC than necessary
         random.shuffle(population)
         
-        '''
-        fitness_list = []
-        R_seq_list = []
-        '''
-        
         # Mutation 
         # --------
         for org in population:
             #org.mutate_with_rate()
             org.mutate_ev()
-            ###fitness_list.append(org.get_fitness())
         
         # Fitness evaluation
         # ------------------
         sorted_pop, sorted_fit = sort_pop_by_fit(population)
-        
-        '''
-        # Sort population based on fitness (descending: from best to worst)
-        ranking = sorted(zip(fitness_list, population), key=lambda x: x[0], reverse=True)
-        
-        sorted_pop = []
-        sorted_fit = []
-        for fitness, org in ranking:
-            sorted_pop.append(org)
-            sorted_fit.append(fitness)
-        '''
         
         best_fitness = sorted_fit[0]
         # print('sorted_fit:', sorted_fit)
@@ -274,22 +258,6 @@ def main():
         if motif_n == 2 and config_dict['connector_type']=='gaussian':
             bc = sorted_pop[0].regulator['connectors'][0]
             print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
-        
-        
-        
-        # left_list = [int(org.regulator['connectors'][0].min_gap) for org in population]
-        # right_list = [int(org.regulator['connectors'][0].max_gap) for org in population]
-        # rev = 0
-        # ok = 0
-        # for n_org in range(len(left_list)):
-        #     if left_list[n_org] > right_list[n_org]:
-        #         rev += 1
-        #     else:
-        #         ok += 1
-        # #print('rev: {}, ok: {}'.format(rev, ok))
-        # print('Best range: [{}, {}]'.format(sorted_pop[0].regulator['connectors'][0].min_gap,
-        #                                     sorted_pop[0].regulator['connectors'][0].max_gap))
-        
         
         
         '''
@@ -360,39 +328,16 @@ def main():
         # -------------
         if update_period:
             if gen % update_period == 0:
-                
                 export_org_data(population[0], gen, results_dirpath, 'ev')
-                
-                # org = population[0]
-                # org.export(results_dirpath + 'ev_gen_{}_org.json'.format(gen))
-                # org.print_genome_map(results_dirpath + 'ev_gen_{}_map.txt'.format(gen))
-                # # IC report (CSV) and Gaps report (JSON)
-                # org.study_info(results_dirpath + 'ev_gen_{}'.format(gen), gen)
         
-        # Export earliest solution
+        # Export first solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
-            
             export_org_data(population[0], gen, results_dirpath, 'sol_first')
-            
-            # org = population[0]
-            # org.export(results_dirpath + 'sol_first_gen_{}_org.json'.format(gen))
-            # org.print_genome_map(results_dirpath + 'sol_first_gen_{}_map.txt'.format(gen))
-            # # IC report (CSV) and Gaps report (JSON)
-            # org.study_info(results_dirpath + 'sol_first_gen_{}'.format(gen), gen)
-            
             solution_gen = gen
     
     # Export latest solution
     if solution_gen:
-        
         export_org_data(population[0], gen, results_dirpath, 'sol_latest')
-        
-        # org = population[0]
-        # org.export(results_dirpath + 'sol_latest_gen_{}_org.json'.format(gen))
-        # org.print_genome_map(results_dirpath + 'sol_latest_gen_{}_map.txt'.format(gen))
-        # # IC report (CSV) and Gaps report (JSON)
-        # org.study_info(results_dirpath + 'sol_latest_gen_{}'.format(gen), gen)
-        
         print('\nDone. Results in ', results_dirpath)
     else:
         for filename in os.listdir(results_dirpath):
@@ -410,7 +355,6 @@ if __name__ == '__main__':
         main()
     '''
     main()
-
 
 
 
