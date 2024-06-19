@@ -99,7 +99,9 @@ class Genome():
         self.targets = None
         self.targets_binary = None
         self.set_targets()
+        self.all_targets = sorted(self.targets, key=lambda x: random.random())
         
+        # Translate regulator
         self.translate_regulator()
     
     def copy_constructor(self, parent):
@@ -151,6 +153,7 @@ class Genome():
         self.spacers = copy.deepcopy(parent.spacers)
         self.targets = parent.targets[:]
         self.targets_binary = copy.deepcopy(parent.targets_binary)
+        self.all_targets = parent.all_targets[:]
     
     def synthesize_genome_seq(self):
         ''' Sets the `seq` attribute. '''
@@ -675,15 +678,7 @@ class Genome():
         # ----------------------------
         elif self.fitness_mode == 'errors_penalty':
             if self.targets_type == 'centroids':
-                hits_centroids = [self._diad_plcm_map['plcm_idx_to_gnom_pos'][idx] for idx in hits_indexes]
-                hits_centroids1 = self.hits_to_centroids(hits_indexes)
-                if hits_centroids != hits_centroids1:
-                    raise ValueError("hits_centroids: Something is different!")
-                else:
-                    print("ALL GOOD with hits_centroids")
-                
-                return - self._get_errors_penalty(
-                    self.hits_to_centroids(hits_indexes), plcm_scores)
+                return - self._get_errors_penalty(self.idx_to_centroids(hits_indexes), plcm_scores)
             else:
                 return - self._get_errors_penalty(hits_indexes, plcm_scores)
     
@@ -1178,8 +1173,10 @@ class Genome():
             if self.motif_n == 2:
                 tg_Rspacer = self.get_R_spacer(self.spacers)
         else:
+            # Targets are not defined when using 'centroids' mode
             tg_Rseq_true = None, None
             tg_Rseq_alt = None, None
+            tg_Rspacer = None
         
         # Targets baseline information
         tg_EH = expected_entropy(self.gamma, self.get_acgt_freqs())
@@ -1187,13 +1184,20 @@ class Genome():
         # This is assuming base probabilities 25% each
         tg_EH_unif = expected_entropy(self.gamma)
         tg_baseline_info_unif = (2 - tg_EH_unif) * self.motif_len
-        if self.motif_n == 2:
-            print('>>>>>\t(1)\t', tg_Rseq_true[0], '\t', tg_Rseq_alt[0]-tg_baseline_info)
-            print('>>>>>\t(2)\t', tg_Rseq_true[1], '\t', tg_Rseq_alt[1]-tg_baseline_info)
+        # if self.targets_type == 'placements' and self.motif_n == 2:
+        #     print('>>>>>\t(1)\t', tg_Rseq_true[0], '\t', tg_Rseq_alt[0]-tg_baseline_info)
+        #     print('>>>>>\t(2)\t', tg_Rseq_true[1], '\t', tg_Rseq_alt[1]-tg_baseline_info)
         
-        tg_cols = []
-        for i in range(self.motif_n):
-            tg_cols.append([tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info, tg_Rseq_alt[i]-tg_baseline_info_unif, tg_Rseq_alt[i]])
+        if self.targets_type == 'placements':
+            tg_cols = []
+            for i in range(self.motif_n):
+                print('>>>>>\tRseq({})\t{}\t{}'.format(i, tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info))
+                tg_cols.append([tg_Rseq_true[i],
+                                tg_Rseq_alt[i]-tg_baseline_info,
+                                tg_Rseq_alt[i]-tg_baseline_info_unif,
+                                tg_Rseq_alt[i]])
+        else:
+            tg_cols = [[None]*4]*self.motif_n
         
         # HITS
         # ----
@@ -1212,8 +1216,8 @@ class Genome():
             hit_EH_unif = expected_entropy(len(hits_indexes))
             hit_baseline_info_unif = (2 - hit_EH_unif) * self.motif_len
             if self.motif_n == 2:
-                print('>>>>>\t(1)\t', hit_Rseq_true[0], '\t', hit_Rseq_alt[0]-hit_baseline_info)
-                print('>>>>>\t(2)\t', hit_Rseq_true[1], '\t', hit_Rseq_alt[1]-hit_baseline_info)
+                print('>>>>>\tRseq(1)\t', hit_Rseq_true[0], '\t', hit_Rseq_alt[0]-hit_baseline_info)
+                print('>>>>>\tRseq(2)\t', hit_Rseq_true[1], '\t', hit_Rseq_alt[1]-hit_baseline_info)
             
             hit_cols = []
             for i in range(self.motif_n):

@@ -63,6 +63,14 @@ def check_settings(config_dict):
         if isinstance(config_dict[key], bool):
             if config_dict[key]:
                 raise ValueError(key + " should be either a number or None or False")
+    
+    # Check `network_evolution`
+    if config_dict['network_evolution'] not in ['normal', 'sequential']:
+        raise ValueError("network_evolution should be 'normal' or 'sequential'.")
+    if config_dict['network_evolution'] == 'sequential':
+        if config_dict['fitness_mode'].lower() != 'errors_penalty':
+            raise ValueError("Sequential network_evolution requires fitness_mode " +
+                             "to be errors_penalty")
 
 def generate_diad_plcm_map(config_dict):
     '''
@@ -152,9 +160,18 @@ def export_org_data(org, gen, results_dirpath, files_tag=''):
     # IC report (CSV) and Gaps report (JSON)
     org.study_info(path_start, gen)
 
-def end_run(gen, solution_gen, drift_time, max_n_gen):
+# def obtained_stable_solution(gen, solution_gen, drift_time):
+#     if solution_gen:
+#         # A solution was already found:
+#         # Stop after `drift_time`
+#         return gen >= solution_gen + drift_time
+
+def end_run(gen, solution_gen, drift_time, max_n_gen, used_targets, gamma):
     ''' Returns True if the run reached the end (according to input parameters).
     Returns False otherwise. '''
+    if used_targets > gamma:
+        return True
+    
     if solution_gen:
         # A solution was already found:
         # Stop after `drift_time`
@@ -172,6 +189,12 @@ def is_max_fitness(fitness, fitness_mode):
         return fitness == 1
     else:
         raise ValueError("fitness_mode should be 'errors_penalty' or 'auprc'.")
+
+def consider_targets_subset(population, n):
+    ''' Forces each organism in `population` to only consider a subset of its
+    targets (`n` many). '''
+    for org in population:
+        org.targets = org.all_targets[:n]
 
 
 def main():
@@ -197,10 +220,13 @@ def main():
     
     pop_size = config_dict['pop_size']
     motif_n = config_dict['motif_n']
+    gamma = config_dict['gamma']
     update_period = config_dict['update_period']
     drift_time = config_dict['drift_time']
     max_n_gen = config_dict['max_n_gen']
     fitness_mode = config_dict['fitness_mode']
+    network_evolution = config_dict['network_evolution']
+    connector_type = config_dict['connector_type']
     
     # Results directory
     results_dirpath = '../results/' + run_tag + '/'
@@ -219,6 +245,12 @@ def main():
     # INITIALIZE POPULATION
     population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
     
+    if network_evolution == 'sequential':
+        used_targets = 1
+        consider_targets_subset(population, used_targets)
+    else:
+        used_targets = gamma
+    
     # START EVOLUTIONARY SIMULATION
     '''
     min_Rseq_list = []
@@ -233,13 +265,18 @@ def main():
     
     # Save initial results for Generation 0
     print("\nGen:", gen)
+    if network_evolution == 'sequential':
+        print('{}/{} targets used'.format(used_targets, gamma))
+    
     sorted_pop, sorted_fit = sort_pop_by_fit(population)
     export_org_data(sorted_pop[0], gen, results_dirpath, 'ev')
     
-    while not end_run(gen, solution_gen, drift_time, max_n_gen):
+    while not end_run(gen, solution_gen, drift_time, max_n_gen, used_targets, gamma):
         
         gen += 1
         print("\nGen:", gen)
+        if network_evolution == 'sequential':
+            print('{}/{} targets used'.format(used_targets, gamma))
         
         # Avoid second-order selection towards higher IC than necessary
         random.shuffle(population)
@@ -258,7 +295,7 @@ def main():
         # print('sorted_fit:', sorted_fit)
         print('\tBest organism:')
         print('\t\tfitness =', best_fitness)
-        if motif_n == 2 and config_dict['connector_type']=='gaussian':
+        if motif_n == 2 and connector_type=='gaussian':
             bc = sorted_pop[0].regulator['connectors'][0]
             print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
         
@@ -331,12 +368,20 @@ def main():
         # -------------
         if update_period:
             if gen % update_period == 0:
-                export_org_data(population[0], gen, results_dirpath, 'ev')
+                export_org_data(population[0], gen, results_dirpath, 'ev' + str(used_targets))
         
         # Export first solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
             export_org_data(population[0], gen, results_dirpath, 'sol_first')
             solution_gen = gen
+        
+        if network_evolution == 'sequential':
+            if solution_gen:
+                if gen >= solution_gen + drift_time:
+                    used_targets += 1
+                    consider_targets_subset(population, used_targets)
+                    if used_targets <= gamma:
+                        solution_gen = None
     
     # Export latest solution
     if solution_gen:
