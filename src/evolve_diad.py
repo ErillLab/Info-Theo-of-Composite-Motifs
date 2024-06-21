@@ -217,14 +217,6 @@ def main():
     population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
     
     # START EVOLUTIONARY SIMULATION
-    '''
-    min_Rseq_list = []
-    avg_Rseq_list = []
-    max_Rseq_list = []
-    best_org_Rseq_list = []
-    best_org_Rseq_ev_list = []
-    '''
-    
     solution_gen = None
     gen = 0
     
@@ -258,40 +250,6 @@ def main():
         if motif_n == 2 and config_dict['connector_type']=='gaussian':
             bc = sorted_pop[0].regulator['connectors'][0]
             print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
-        
-        
-        '''
-        # If target placement are pre-defined, keep track of Rseq through time
-        # --------------------------------------------------------------------
-        
-        if config_dict['targets_type'] == 'placements':
-            if update_period:
-                if gen % update_period == 0:
-                    
-                    R_seq_list = [org.get_R_sequence_ev() for org in sorted_pop]
-                    
-                    # R_seq of all the organisms with best fitness: `best_organisms_R_seq`
-                    
-                    # Index of the last organism that has fitness equal to `best_fitness`
-                    rev_idx = sorted_fit[::-1].index(best_fitness)
-                    if rev_idx == 0:
-                        # all organisms are 'best organism'
-                        best_organisms_R_seq = R_seq_list[:]
-                    else:
-                        best_organisms_R_seq = R_seq_list[:-rev_idx]
-                    
-                    print('\tAvg R_sequence:\t', np.array(R_seq_list).mean())
-                    print('\tAvg best R_sequence:\t', np.array(best_organisms_R_seq).mean())
-                    print('\tR_frequency:\t', org.get_R_frequency())
-                    
-                    if update_period:
-                        if gen % update_period == 0:
-                            min_Rseq_list.append(np.array(R_seq_list).min())
-                            avg_Rseq_list.append(np.array(R_seq_list).mean())
-                            max_Rseq_list.append(np.array(R_seq_list).max())
-                            best_org_Rseq_list.append(np.mean(best_organisms_R_seq))
-                            best_org_Rseq_ev_list.append(R_seq_list[0])
-        '''
         
         # Selection
         # ---------
