@@ -675,15 +675,7 @@ class Genome():
         # ----------------------------
         elif self.fitness_mode == 'errors_penalty':
             if self.targets_type == 'centroids':
-                hits_centroids = [self._diad_plcm_map['plcm_idx_to_gnom_pos'][idx] for idx in hits_indexes]
-                hits_centroids1 = self.hits_to_centroids(hits_indexes)
-                if hits_centroids != hits_centroids1:
-                    raise ValueError("hits_centroids: Something is different!")
-                else:
-                    print("ALL GOOD with hits_centroids")
-                
-                return - self._get_errors_penalty(
-                    self.hits_to_centroids(hits_indexes), plcm_scores)
+                return - self._get_errors_penalty(self.idx_to_centroids(hits_indexes), plcm_scores)
             else:
                 return - self._get_errors_penalty(hits_indexes, plcm_scores)
     
@@ -1178,8 +1170,10 @@ class Genome():
             if self.motif_n == 2:
                 tg_Rspacer = self.get_R_spacer(self.spacers)
         else:
+            # Targets are not defined when using 'centroids' mode
             tg_Rseq_true = None, None
             tg_Rseq_alt = None, None
+            tg_Rspacer = None
         
         # Targets baseline information
         tg_EH = expected_entropy(self.gamma, self.get_acgt_freqs())
@@ -1187,13 +1181,18 @@ class Genome():
         # This is assuming base probabilities 25% each
         tg_EH_unif = expected_entropy(self.gamma)
         tg_baseline_info_unif = (2 - tg_EH_unif) * self.motif_len
-        if self.motif_n == 2:
-            print('>>>>>\t(1)\t', tg_Rseq_true[0], '\t', tg_Rseq_alt[0]-tg_baseline_info)
-            print('>>>>>\t(2)\t', tg_Rseq_true[1], '\t', tg_Rseq_alt[1]-tg_baseline_info)
-        
-        tg_cols = []
-        for i in range(self.motif_n):
-            tg_cols.append([tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info, tg_Rseq_alt[i]-tg_baseline_info_unif, tg_Rseq_alt[i]])
+        # 'Targets' stats (only makes sense for 'placements' mode)
+        if self.targets_type == 'placements':
+            tg_cols = []
+            print('>>>>\tTargets:')
+            for i in range(self.motif_n):
+                print('>>>>\t\tRseq({})\t{:.4f}\t{:.4f}'.format(i+1, tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info))
+                tg_cols.append([tg_Rseq_true[i],
+                                tg_Rseq_alt[i]-tg_baseline_info,
+                                tg_Rseq_alt[i]-tg_baseline_info_unif,
+                                tg_Rseq_alt[i]])
+        else:
+            tg_cols = [[None]*4]*self.motif_n
         
         # HITS
         # ----
@@ -1212,8 +1211,9 @@ class Genome():
             hit_EH_unif = expected_entropy(len(hits_indexes))
             hit_baseline_info_unif = (2 - hit_EH_unif) * self.motif_len
             if self.motif_n == 2:
-                print('>>>>>\t(1)\t', hit_Rseq_true[0], '\t', hit_Rseq_alt[0]-hit_baseline_info)
-                print('>>>>>\t(2)\t', hit_Rseq_true[1], '\t', hit_Rseq_alt[1]-hit_baseline_info)
+                print('>>>>\tHits:')
+                print('>>>>\t\tRseq(1)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[0], hit_Rseq_alt[0]-hit_baseline_info))
+                print('>>>>\t\tRseq(2)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[1], hit_Rseq_alt[1]-hit_baseline_info))
             
             hit_cols = []
             for i in range(self.motif_n):
@@ -1256,90 +1256,7 @@ class Genome():
             # Save gaps report
             with open(outfilepath + '_gaps_report.json', 'w') as f:
                 json.dump([int(gap) for gap in hits_spacers], f)
-        
-        
-        
-        
-        
-        
-        # # Hit sequences
-        # hit_sequences = self.idx_to_seq(hits_indexes)
-        
-        # # R_sequence
-        # Rseq1_hits_true = self.get_R_sequence_ev(hit_sequences[0])
-        # Rseq2_hits_true = self.get_R_sequence_ev(hit_sequences[1])
-        
-        # # Alternative Rsequence definition ------------------------------------
-        
-        # Rseq1 = self.get_R_sequence_alternative(hit_sequences[0])
-        # Rseq2 = self.get_R_sequence_alternative(hit_sequences[1])
-        
-        # EH = expected_entropy(len(hits_indexes), self.get_acgt_freqs())
-        # baseline_info = (2 - EH) * L
-        
-        # # This is assuming base probabilities 25% each
-        # EH_unif = expected_entropy(len(hits_indexes))
-        # baseline_info_unif = (2 - EH_unif) * L
-        
-        # print('>>>>>>>\t(1)\t', Rseq1_hits_true, '\t', Rseq1-baseline_info)
-        # print('>>>>>>>\t(2)\t', Rseq2_hits_true, '\t', Rseq2-baseline_info)
-        
-        # # ---------------------------------------------------------------------
-        
-        # # Rsequence of pre-defined targets
-        # if self.targets_type == 'placements':
-            
-        #     # Target sequences
-        #     tg_sequences = self.idx_to_seq(self.targets)
-            
-        #     # R_sequence
-        #     Rseq1_tg = self.get_R_sequence_ev(tg_sequences[0])
-        #     Rseq2_tg = self.get_R_sequence_ev(tg_sequences[1])
-            
-        # else:
-        #     Rseq1_tg, Rseq2_tg = None, None
-        
-        # # Rspacer of the hits
-        # hits_spacers = []
-        # for idx in hits_indexes:
-        #     l, r = divmod(idx, self.G)
-        #     hits_spacers.append((r - l) % self.G - L)
-        # '''
-        # elements_pos = [divmod(idx, self.G) for idx in hits_indexes]
-        # hits_spacers = [(r - l) % self.G - L for l, r in elements_pos]
-        # '''
-        # Rspacer_hits = self.get_R_spacer(hits_spacers)
-        
-        # # Rspacer of the targets
-        # Rspacer_tg = self.get_R_spacer(self.spacers)
-        
-        # # Rconnector
-        # Rconnector = self.get_R_connector()
-        
-        # # Save IC report
-        # if outfilepath:
-        #     ic_report = pd.DataFrame(
-        #         {'Rseq1': [Rseq1_tg, Rseq1_hits_true, Rseq1-baseline_info, Rseq1-baseline_info_unif, Rseq1],
-        #          'Rseq2': [Rseq2_tg, Rseq2_hits_true, Rseq2-baseline_info, Rseq2-baseline_info_unif, Rseq2],
-        #          'Rspacer_hits': [Rspacer_hits] * 5,
-        #          'Rspacer_targets': [Rspacer_tg] * 5,
-        #          'Rconnector': [Rconnector] * 5})
-        #     ic_report['Rtot']       = ic_report['Rseq1'] + ic_report['Rseq2'] + ic_report['Rspacer_targets']
-        #     ic_report['Reffective'] = ic_report['Rseq1'] + ic_report['Rseq2'] + ic_report['Rconnector']
-        #     ic_report['Rfrequency'] = [self.get_R_frequency()] * 5
-        #     ic_report.index = ['true_Rseq_targets','true_Rseq_hits', 'corrected', 'corrected_unif', 'uncorrected']
-        #     ic_report.to_csv(outfilepath + '_ic_report.csv')
-        
-        # # Save gaps report
-        # if outfilepath:
-        #     with open(outfilepath + '_gaps_report.json', 'w') as f:
-        #         json.dump([int(gap) for gap in gaps], f)
-        
-        
-        
-        
 
-                    
 
 
 
