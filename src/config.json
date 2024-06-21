@@ -1,7 +1,7 @@
 {
   "run_mode": "serial",
   "pop_size": 32,
-  "G": 256,
+  "G": 512,
   "gamma": 8,
   "fitness_mode": "errors_penalty",
   "network_evolution": "sequential",
@@ -21,9 +21,9 @@
   "fix_right": null,
   "min_left": null,
   "max_right": 20,
-  "mut_rate": 0.005,
+  "mut_rate": 0.05,
   "threshold_res": 200,
   "update_period": 100,
-  "drift_time": 10,
+  "drift_time": 100,
   "max_n_gen": 100000
 }
