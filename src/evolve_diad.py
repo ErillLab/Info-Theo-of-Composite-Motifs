@@ -60,6 +60,10 @@ def check_settings(config_dict):
         if isinstance(config_dict[key], bool):
             if config_dict[key]:
                 raise ValueError(key + " should be either a number or None or False")
+    
+    # Check `mut_mode`
+    if config_dict['mut_mode'] not in ['ev', 'rate']:
+        raise ValueError("mut_mode should be 'ev' or 'rate'.")
 
 def generate_diad_plcm_map(config_dict):
     '''
@@ -198,6 +202,7 @@ def main():
     drift_time = config_dict['drift_time']
     max_n_gen = config_dict['max_n_gen']
     fitness_mode = config_dict['fitness_mode']
+    mut_mode = config_dict['mut_mode']
     
     # Results directory
     results_dirpath = '../results/' + run_tag + '/'
@@ -236,15 +241,13 @@ def main():
         # Mutation 
         # --------
         for org in population:
-            #org.mutate_with_rate()
-            org.mutate_ev()
+            org.mutate(mut_mode)
         
         # Fitness evaluation
         # ------------------
         sorted_pop, sorted_fit = sort_pop_by_fit(population)
         
         best_fitness = sorted_fit[0]
-        # print('sorted_fit:', sorted_fit)
         print('\tBest organism:')
         print('\t\tfitness =', best_fitness)
         if motif_n == 2 and config_dict['connector_type']=='gaussian':

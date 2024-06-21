@@ -36,6 +36,7 @@ class Genome():
         
         # Set parameters from config file
         self.fitness_mode = config_dict['fitness_mode']
+        self.extra_FN_penalty = config_dict['extra_FN_penalty']
         self.G = config_dict['G']
         self.gamma = config_dict['gamma']
         self.mut_rate = config_dict['mut_rate']
@@ -106,6 +107,7 @@ class Genome():
         
         # Set parameters from parent
         self.fitness_mode = parent.fitness_mode
+        self.extra_FN_penalty = parent.extra_FN_penalty
         self.G = parent.G
         self.gamma = parent.gamma
         self.mut_rate = parent.mut_rate
@@ -641,15 +643,15 @@ class Genome():
                 # Score of missed target
                 s = plcm_scores[missed]
             # FN penalty + Extra penalty based on the score
-            # `extra_FN_penalty` is etween 0 and 1, so `fn_penalty` is between 1 and 2
-            fn_penalty += 1 + self.extra_FN_penalty(s, tr)
+            # The extra FN penalty is between 0 and 1, so `fn_penalty` is between 1 and 2
+            fn_penalty += 1 + self._calculate_FN_penalty(s, tr)
         return fn_penalty
     
     def _get_errors_penalty(self, hits_indexes, plcm_scores):
-        if self.motif_n == 1:
-            return self.count_fp(hits_indexes) + self.count_fn(hits_indexes)
-        else:
+        if self.extra_FN_penalty:
             return self.count_fp(hits_indexes) + self._get_fn_penalty(hits_indexes, plcm_scores)
+        else:
+            return self.count_fp(hits_indexes) + self.count_fn(hits_indexes)
     
     def _get_auprc(self, scores):
         ''' Returns the Area Under the Precision-Recall Curve (AUPRC). '''
@@ -679,7 +681,7 @@ class Genome():
             else:
                 return - self._get_errors_penalty(hits_indexes, plcm_scores)
     
-    def extra_FN_penalty(self, score, threshold):
+    def _calculate_FN_penalty(self, score, threshold):
         '''
         Extra penalty to apply to false negatives (FNs). FNs are targets with a
         score below the threshold. Instead of counting as a penalty of just
@@ -747,6 +749,15 @@ class Genome():
     # ================================
     # ================================
     
+    
+    def mutate(self, mode='ev'):
+        ''' Mutates the organism according to the mutation mode. '''
+        if mode == 'ev':
+            self.mutate_ev()
+        elif mode == 'rate':
+            self.mutate_with_rate()
+        else:
+            raise ValueError("mode should be 'ev' or 'rate'.")
     
     def mutate_ev(self):
         ''' Applyies one and only one mutation (like in the ev program). '''
@@ -1184,9 +1195,9 @@ class Genome():
         # 'Targets' stats (only makes sense for 'placements' mode)
         if self.targets_type == 'placements':
             tg_cols = []
-            print('>>>>\tTargets:')
+            # print('>>>>\tTargets:')
             for i in range(self.motif_n):
-                print('>>>>\t\tRseq({})\t{:.4f}\t{:.4f}'.format(i+1, tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info))
+                # print('>>>>\t\tRseq({})\t{:.4f}\t{:.4f}'.format(i+1, tg_Rseq_true[i], tg_Rseq_alt[i]-tg_baseline_info))
                 tg_cols.append([tg_Rseq_true[i],
                                 tg_Rseq_alt[i]-tg_baseline_info,
                                 tg_Rseq_alt[i]-tg_baseline_info_unif,
@@ -1210,10 +1221,10 @@ class Genome():
             # This is assuming base probabilities 25% each
             hit_EH_unif = expected_entropy(len(hits_indexes))
             hit_baseline_info_unif = (2 - hit_EH_unif) * self.motif_len
-            if self.motif_n == 2:
-                print('>>>>\tHits:')
-                print('>>>>\t\tRseq(1)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[0], hit_Rseq_alt[0]-hit_baseline_info))
-                print('>>>>\t\tRseq(2)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[1], hit_Rseq_alt[1]-hit_baseline_info))
+            # if self.motif_n == 2:
+            #     print('>>>>\tHits:')
+            #     print('>>>>\t\tRseq(1)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[0], hit_Rseq_alt[0]-hit_baseline_info))
+            #     print('>>>>\t\tRseq(2)\t{:.4f}\t{:.4f}'.format(hit_Rseq_true[1], hit_Rseq_alt[1]-hit_baseline_info))
             
             hit_cols = []
             for i in range(self.motif_n):
@@ -1230,6 +1241,8 @@ class Genome():
                  'Rfrequency': [self.get_R_frequency()] * 4})
             df.index = ['true_Rseq', 'alt_corrected', 'alt_corrected_unif', 'alt_uncorrected']
             df.to_csv(outfilepath + '_ic_report.csv')
+            print('')
+            print(df.transpose())
         
         elif self.motif_n == 2:
             if self.connector_type == 'gaussian':
@@ -1251,6 +1264,7 @@ class Genome():
             df['Rfrequency'] = [self.get_R_frequency()] * 4
             df.index = ['true_Rseq', 'alt_corrected', 'alt_corrected_unif', 'alt_uncorrected']
             df.to_csv(outfilepath + '_ic_report.csv')
+            print(df.drop(['generation'], axis=1).transpose())
         
         if self.motif_n == 2:
             # Save gaps report
