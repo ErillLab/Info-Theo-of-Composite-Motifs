@@ -1,5 +1,6 @@
 {
   "run_mode": "serial",
+  "print_to_stdout": false,
   "pop_size": 64,
   "G": 512,
   "gamma": 16,
@@ -25,6 +26,6 @@
   "mut_rate": 0.005,
   "threshold_res": 200,
   "update_period": 100,
-  "drift_time": 1000,
+  "drift_time": 10000,
   "max_n_gen": 40000
 }

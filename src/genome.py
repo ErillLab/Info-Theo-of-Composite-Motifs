@@ -33,6 +33,7 @@ class Genome():
             self.copy_constructor(clone)
     
     def non_copy_constructor(self, config_dict, diad_plcm_map):
+        ''' Creates a new random genome. '''
         
         # Set parameters from config file
         self.fitness_mode = config_dict['fitness_mode']
@@ -104,6 +105,7 @@ class Genome():
         self.translate_regulator()
     
     def copy_constructor(self, parent):
+        ''' Copies attributes from an already existing genome (cloning it). '''
         
         # Set parameters from parent
         self.fitness_mode = parent.fitness_mode
@@ -1028,14 +1030,14 @@ class Genome():
             raise ValueError("To be coded ...")
     
     def _get_gene_string(self, name, length):
-        ''' Called by `print_genome_map`. Returns a string of the given length
+        ''' Called by `make_genome_map`. Returns a string of the given length
         that represents a gene as a name followed by an arrow. '''
         name += '-' * (length - len(name))
         return name[:length-1] + '>'
     
     def _add_diad_plcm_line(self, outlist, elements_pos, elements_idx):
         '''
-        Called by `print_genome_map`. Adds one line of characters to the output.
+        Called by `make_genome_map`. Adds one line of characters to the output.
         Writes characters in the right positions of `outlist` (list of characters)
         if it finds space characters. Otherwise, it doesn't overwrite the characters
         found at those positions: the info about the elements that were supposed
@@ -1066,8 +1068,13 @@ class Genome():
                 outlist[r:r+self.motif_len] = [c for c in str(idx+1)] + ['R'] * (self.motif_len - len(str(idx+1)))
         return outlist, leftovers, leftovers_idx
     
-    def print_genome_map(self, outfilepath=None):
+    def make_genome_map(self, outfilepath=None, verbose=True):
         '''
+        
+        !!! Update docstring ...
+        
+        
+        
         Prints the genome map to standard output and, if specified, it writes it
         into an output file with path `outfilepath`. The map includes the location
         of genes and target positions for transcriptional regulation, as well as
@@ -1163,9 +1170,10 @@ class Genome():
                 f.write(out_string)
         
         # Print to standard output
-        print(out_string)
+        if verbose:
+            print(out_string)
     
-    def study_info(self, outfilepath=None, gen=None):
+    def study_info(self, outfilepath=None, gen=None, verbose=True):
         
         if self.motif_n > 2:
             raise ValueError("To be coded.")
@@ -1241,8 +1249,9 @@ class Genome():
                  'Rfrequency': [self.get_R_frequency()] * 4})
             df.index = ['true_Rseq', 'alt_corrected', 'alt_corrected_unif', 'alt_uncorrected']
             df.to_csv(outfilepath + '_ic_report.csv')
-            print('')
-            print(df.transpose())
+            if verbose:
+                print('')
+                print(df.transpose())
         
         elif self.motif_n == 2:
             if self.connector_type == 'gaussian':
@@ -1264,7 +1273,8 @@ class Genome():
             df['Rfrequency'] = [self.get_R_frequency()] * 4
             df.index = ['true_Rseq', 'alt_corrected', 'alt_corrected_unif', 'alt_uncorrected']
             df.to_csv(outfilepath + '_ic_report.csv')
-            print(df.drop(['generation'], axis=1).transpose())
+            if verbose:
+                print(df.drop(['generation'], axis=1).transpose())
         
         if self.motif_n == 2:
             # Save gaps report

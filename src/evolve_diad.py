@@ -123,7 +123,7 @@ def sort_pop_by_fit(population):
         sorted_fit.append(fitness)
     return sorted_pop, sorted_fit
 
-def export_org_data(org, gen, results_dirpath, files_tag=''):
+def export_org_data(org, gen, results_dirpath, files_tag='', verbose=True):
     '''
     Save output files for the organism `org` into the `results_dirpath` folder.
     Four files are generated:
@@ -145,13 +145,13 @@ def export_org_data(org, gen, results_dirpath, files_tag=''):
         circumstances. For example, the tag "sol_latest_" can be used when
         saving the last organism of the run. The default is '' (no tag).
     '''
-    # Each output file path starts with the following string
+    # Each output file name starts with the following string
     path_start = os.path.join(results_dirpath, '{}_gen_{}'.format(files_tag, gen))
     # Save files into `results_dirpath`
     org.export(path_start + '_org.json')
-    org.print_genome_map(path_start + '_map.txt')
+    org.make_genome_map(path_start + '_map.txt', verbose)
     # IC report (CSV) and Gaps report (JSON)
-    org.study_info(path_start, gen)
+    org.study_info(path_start, gen, verbose)
 
 def end_run(gen, solution_gen, drift_time, max_n_gen):
     ''' Returns True if the run reached the end (according to input parameters).
@@ -188,6 +188,7 @@ def main():
     
     run_tag = time.strftime("%Y%m%d%H%M%S")
     run_mode = config_dict['run_mode']
+    verb = config_dict['print_to_stdout']
     
     # Ensure run_tag uniqueness when running in parallel
     if run_mode == 'parallel':
@@ -226,14 +227,14 @@ def main():
     gen = 0
     
     # Save initial results for Generation 0
-    print("\nGen:", gen)
+    if verb:
+        print("\nGen:", gen)
     sorted_pop, sorted_fit = sort_pop_by_fit(population)
-    export_org_data(sorted_pop[0], gen, results_dirpath, 'ev')
+    export_org_data(sorted_pop[0], gen, results_dirpath, 'ev', verb)
     
     while not end_run(gen, solution_gen, drift_time, max_n_gen):
         
         gen += 1
-        print("\nGen:", gen)
         
         # Avoid second-order selection towards higher IC than necessary
         random.shuffle(population)
@@ -246,13 +247,15 @@ def main():
         # Fitness evaluation
         # ------------------
         sorted_pop, sorted_fit = sort_pop_by_fit(population)
-        
         best_fitness = sorted_fit[0]
-        print('\tBest organism:')
-        print('\t\tfitness =', best_fitness)
-        if motif_n == 2 and config_dict['connector_type']=='gaussian':
-            bc = sorted_pop[0].regulator['connectors'][0]
-            print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
+        
+        if verb:
+            print("\nGen:", gen)
+            print('\tBest organism:')
+            print('\t\tfitness =', best_fitness)
+            if motif_n == 2 and config_dict['connector_type']=='gaussian':
+                bc = sorted_pop[0].regulator['connectors'][0]
+                print('\t\tconnector: (mu = {}, sigma = {:.3f})'.format(bc.mu, bc.sigma))
         
         # Selection
         # ---------
@@ -289,16 +292,16 @@ def main():
         # -------------
         if update_period:
             if gen % update_period == 0:
-                export_org_data(population[0], gen, results_dirpath, 'ev')
+                export_org_data(population[0], gen, results_dirpath, 'ev', verb)
         
         # Export first solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
-            export_org_data(population[0], gen, results_dirpath, 'sol_first')
+            export_org_data(population[0], gen, results_dirpath, 'sol_first', verb)
             solution_gen = gen
     
     # Export latest solution
     if solution_gen:
-        export_org_data(population[0], gen, results_dirpath, 'sol_latest')
+        export_org_data(population[0], gen, results_dirpath, 'sol_latest', verb)
         print('\nDone. Results in ', results_dirpath)
     else:
         for filename in os.listdir(results_dirpath):
