@@ -1,7 +1,9 @@
 {
   "run_mode": "serial",
-  "print_to_stdout": false,
+  "print_to_stdout": true,
   "pop_size": 64,
+  "pop_origin": "random",
+  "pop_dir_path": "../data/input_pop_test",
   "G": 512,
   "gamma": 16,
   "fitness_mode": "auprc",

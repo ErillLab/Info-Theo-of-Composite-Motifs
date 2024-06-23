@@ -3,6 +3,8 @@
 
 Evolve transcriptional regulatory system.
 
+TODO: Rename file 'evolve_reg_sys.py'
+
 '''
 
 
@@ -11,6 +13,7 @@ import time
 import random
 import json
 import os
+import warnings
 from genome import Genome
 
 
@@ -64,6 +67,13 @@ def check_settings(config_dict):
     # Check `mut_mode`
     if config_dict['mut_mode'] not in ['ev', 'rate']:
         raise ValueError("mut_mode should be 'ev' or 'rate'.")
+    
+    # Check population origin parameters
+    if config_dict['pop_origin'] not in ['random', 'files']:
+        raise ValueError("pop_origin should be 'random' or 'files'.")
+    if config_dict['pop_origin'] == 'files':
+        if not isinstance(config_dict['pop_dir_path'], str):
+            raise ValueError("pop_dir_path must be a string when pop_origin is 'files'.")
 
 def generate_diad_plcm_map(config_dict):
     '''
@@ -174,6 +184,34 @@ def is_max_fitness(fitness, fitness_mode):
     else:
         raise ValueError("fitness_mode should be 'errors_penalty' or 'auprc'.")
 
+def initialize_poplutaion(config_dict, diad_plcm_map, verbose):
+    '''
+    Returns a population (list of Genome objects). The Genomes are random or
+    they are read from files, depending on the parameters in the config.
+    '''
+    pop_size = config_dict['pop_size']
+    pop_origin = config_dict['pop_origin']
+    pop_dir_path = config_dict['pop_dir_path']
+    
+    # Generate population of random organisms
+    if pop_origin == 'random':
+        if verbose:
+            print('Generating {} random organisms ...'.format(pop_size))
+        return [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
+    
+    # Import population from files
+    elif pop_origin == 'files':
+        if verbose:
+            print('Importing population from {} ...'.format(pop_dir_path))
+        files = os.listdir(pop_dir_path)
+        if len(files) != pop_size:
+            warnings.warn(("pop_size parameter is set to " + str(pop_size) +
+                           ", but " + str(len(files)) + " files were found in " +
+                           pop_dir_path + ". Effective pop size in this run will be " +
+                           str(len(files))))
+        return [Genome(config_dict, diad_plcm_map, input_file=pop_dir_path + '/' + f) for f in files]
+        
+
 
 def main():
     '''
@@ -220,7 +258,8 @@ def main():
         diad_plcm_map = None    
     
     # INITIALIZE POPULATION
-    population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
+    # population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
+    population = initialize_poplutaion(config_dict, diad_plcm_map, verb)
     
     # START EVOLUTIONARY SIMULATION
     solution_gen = None
@@ -259,7 +298,7 @@ def main():
         
         # Selection
         # ---------
-        middle = pop_size//2
+        middle = len(sorted_pop)//2
         good, bad = sorted_pop[:middle], sorted_pop[middle:]
         
         # Number of ties

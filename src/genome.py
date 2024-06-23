@@ -25,14 +25,26 @@ from expected_entropy import expected_entropy, entropy
 
 class Genome():
     
-    def __init__(self, config_dict=None, diad_plcm_map=None, clone=None):
+    def __init__(self, config_dict=None, diad_plcm_map=None, clone=None, input_file=None):
         
-        if clone is None:
-            self.non_copy_constructor(config_dict, diad_plcm_map)
+        if clone and input_file:
+            raise ValueError("Genome can be cloned from another Genome or " +
+                             "imported from file, not both! Check 'clone' " +
+                             "and 'input_file' arguments.")
+        
+        if clone:
+            self._copy_constructor(clone)
+        elif input_file:
+            self._import(input_file, config_dict, diad_plcm_map)
         else:
-            self.copy_constructor(clone)
+            self._non_copy_constructor(config_dict, diad_plcm_map)
+        
+        # if clone is None:
+        #     self._non_copy_constructor(config_dict, diad_plcm_map)
+        # else:
+        #     self._copy_constructor(clone)
     
-    def non_copy_constructor(self, config_dict, diad_plcm_map):
+    def _non_copy_constructor(self, config_dict, diad_plcm_map):
         ''' Creates a new random genome. '''
         
         # Set parameters from config file
@@ -46,7 +58,7 @@ class Genome():
         self.motif_res = config_dict['motif_res']
         self.pseudocounts = config_dict['pseudocounts']
         self.threshold_res = config_dict['threshold_res']
-        self.max_threshold = config_dict['motif_len'] * 2
+        self.max_threshold = self.motif_len * 2
         self.min_threshold = -self.max_threshold
         
         # Placements map for diads
@@ -104,7 +116,7 @@ class Genome():
         
         self.translate_regulator()
     
-    def copy_constructor(self, parent):
+    def _copy_constructor(self, parent):
         ''' Copies attributes from an already existing genome (cloning it). '''
         
         # Set parameters from parent
@@ -155,6 +167,119 @@ class Genome():
         self.spacers = copy.deepcopy(parent.spacers)
         self.targets = parent.targets[:]
         self.targets_binary = copy.deepcopy(parent.targets_binary)
+    
+    def _import(self, filepath, config_dict, diad_plcm_map):
+        ''' Imports genome from JSON file. '''
+        
+        # Parameters decided by the run config file
+        # -----------------------------------------
+        self.fitness_mode = config_dict['fitness_mode']
+        self.extra_FN_penalty = config_dict['extra_FN_penalty']
+        self.mut_rate = config_dict['mut_rate']
+        
+        # XXX Add warning about fix_* parameters
+        self.fix_mu = config_dict['fix_mu']
+        self.fix_sigma = config_dict['fix_sigma']
+        self.fix_left  = config_dict['fix_left']
+        self.fix_right = config_dict['fix_right']
+        
+        # Parameters decided by the input JSON file
+        # -----------------------------------------
+        
+        with open(filepath) as f:
+            d = json.load(f)
+        
+        self.G = d['G']
+        self.gamma = d['gamma']
+        
+        self.motif_n = d['motif_n']
+        self.motif_len = d['motif_len']
+        self.motif_res = d['motif_res']
+        self.pseudocounts = d['pseudocounts']
+        self.threshold_res = d['threshold_res']
+        self.max_threshold = self.motif_len * 2
+        self.min_threshold = -self.max_threshold
+        
+        # Placements map for diads
+        if self.motif_n == 2:
+            if diad_plcm_map is None:
+                self._set_diad_plcm_map()
+            else:
+                self._check_diad_plcm_map(diad_plcm_map)  # check map validity
+                self._diad_plcm_map = diad_plcm_map
+        else:
+            self._diad_plcm_map = None
+        
+        # Connector
+        self.connector_type = d['connector_type']
+        # For Gaussian connector
+        self.min_mu = d['min_mu']
+        self.max_mu = d['max_mu']
+        self.min_sigma = 0.01
+        self.max_sigma = self.G * 2  # Approximates a uniform over the genome
+        self.sigma_res = d['sigma_res']
+        self._sigma_vals = np.logspace(
+            np.log2(self.min_sigma), np.log2(self.max_sigma), base=2, num=64)  # XXX Obsolete ?
+        # For Uniform connector
+        self.min_left  = d['min_left']
+        self.max_right = d['max_right']
+        if self.min_left is None:
+            self.min_left = 0
+        if self.max_right is None:
+            self.max_right = self.G
+        
+        # Set genome content
+        self.seq = d['seq']
+        self.regulator = None
+        self.threshold = None  # XXX Obsolete ?
+        self.acgt = {'a': None, 'c': None, 'g': None, 't': None} 
+        self._bases = ['a', 'c', 'g', 't']
+        self._nucl_to_int = {'a': 0, 'c': 1, 'g': 2, 't': 3}
+        self.set_acgt_content()
+        # Set target sites
+        self.targets_type = d['targets_type']
+        self.spacers = d['spacers']
+        self.targets = d['targets']
+        self.targets_binary = None
+        self._set_targets_binary()
+        # Set `regulator`
+        self.translate_regulator()
+    
+    def export(self, outfilepath=None):
+        '''
+        Exports the organism as a JSON file. If the path of the output file
+        `outfilepath` is not specified, a python dictionary is returned, instead.
+        '''
+        # XXX Update this dictionary
+        out_dict = {'seq': self.seq,
+                    'G': self.G,
+                    'gamma': self.gamma,
+                    'motif_n': self.motif_n,
+                    'motif_len': self.motif_len,
+                    'targets': self.targets,
+                    'motif_res': self.motif_res,
+                    'threshold_res': self.threshold_res,
+                    'max_threshold': self.max_threshold,
+                    'targets_type': self.targets_type,
+                    'spacers': self.spacers,
+                    'connector_type': self.connector_type,
+                    'sigma_res': self.sigma_res,
+                    'min_mu': self.min_mu, 'max_mu': self.max_mu,
+                    'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
+                    'min_left': self.min_left, 'max_right': self.max_right,
+                    'pseudocounts': self.pseudocounts}
+        if self.motif_n == 2:
+            if self.connector_type == 'gaussian':
+                out_dict['mu']    = self.regulator['connectors'][0].mu
+                out_dict['sigma'] = self.regulator['connectors'][0].sigma
+            elif self.connector_type == 'uniform':
+                out_dict['min_gap'] = self.regulator['connectors'][0].min_gap
+                out_dict['max_gap'] = self.regulator['connectors'][0].max_gap
+        if outfilepath:
+            with open(outfilepath, 'w') as f:
+                json.dump(out_dict, f)
+        else:
+            return out_dict
     
     def synthesize_genome_seq(self):
         ''' Sets the `seq` attribute. '''
@@ -248,6 +373,11 @@ class Genome():
         return self.seq[thrsh_start:thrsh_stop]
     
     def translate_pwm_gene(self, pwm_number):
+        
+        # ------------------------------------------------------------------------
+        # XXX Consider alternative approach (column-wise flattening of the matrix)
+        # ------------------------------------------------------------------------
+        
         gene_seq = self.get_pwm_gene_seq(pwm_number)
         # Swap A with T
         gene_seq = gene_seq.replace("a", "x")
@@ -952,36 +1082,6 @@ class Genome():
         if len(diad_plcm_map['gnom_pos_to_plcm_idx']) != self.G:
             raise ValueError("gnom_pos_to_plcm_idx should be a list of " +
                              str(self.G) + " elements.")
-    
-    def export(self, outfilepath=None):
-        '''
-        Exports the organism as a JSON file. If the path of the output file
-        `outfilepath` is not specified, a python dictionary is returned, instead.
-        '''
-        # XXX Update this dictionary
-        out_dict = {'seq': self.seq,
-                    'G': self.G,
-                    'gamma': self.gamma,
-                    'motif_n': self.motif_n,
-                    'motif_len': self.motif_len,
-                    'targets': self.targets,
-                    'motif_res': self.motif_res,
-                    'threshold_res': self.threshold_res,
-                    'min_mu': self.min_mu, 'max_mu': self.max_mu,
-                    'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
-                    'pseudocounts': self.pseudocounts}
-        if self.motif_n == 2:
-            if self.connector_type == 'gaussian':
-                out_dict['mu']    = self.regulator['connectors'][0].mu
-                out_dict['sigma'] = self.regulator['connectors'][0].sigma
-            elif self.connector_type == 'uniform':
-                out_dict['min_gap'] = self.regulator['connectors'][0].min_gap
-                out_dict['max_gap'] = self.regulator['connectors'][0].max_gap
-        if outfilepath:
-            with open(outfilepath, 'w') as f:
-                json.dump(out_dict, f)
-        else:
-            return out_dict
     
     def idx_to_seq(self, indexes):
         '''
