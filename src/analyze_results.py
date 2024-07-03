@@ -338,7 +338,7 @@ make_3d_plot(merged_df, parameters)
 # AUPRC_fitness
 # =============
 
-results_dir = '../results/AUPRC_fitness/'
+results_dir = '../../RESULTS/AUPRC_fitness/'
 sample_size = None
 
 # XXX
@@ -429,10 +429,21 @@ meta_ev_k_values['Average']  = meta_ev_k_values.mean(axis=1)
 
 key = '20240506163533_9'  # Gauss 9 example
 key = '20240507003158_15'  # Gauss 16 example
-plt.plot(meta_ev_k_values[key])
-plt.hlines(opt_k, xmin=0, xmax=len(meta_ev_k_values[key]), colors='red')
-plt.ylabel('spring constant (N/m)')
 
+
+# For poster
+key = '20240506163533_9'  # Gauss 9 example
+plt.rcParams.update({'font.size': 14})
+plt.plot(meta_ev_k_values[key], label=r'$\kappa$: spring constant of most fit organism')
+plt.hlines(opt_k, xmin=0, xmax=len(meta_ev_k_values[key]),
+           colors='red', linestyles='dashed', label=r'$\kappa_{opt}$: predicted optimal spring constant')
+plt.xlabel('generation')
+plt.ylabel('spring constant (N/m)')
+plt.xlim((0,40))  # !!! < < < < < < < < < < < < < < < < < < < < < < < < < < < <
+plt.ylim((0,0.001))
+plt.legend()
+plt.tight_layout()
+plt.savefig('SPRING_CONSTANT_evolution0.png', dpi=300)
 
 
 

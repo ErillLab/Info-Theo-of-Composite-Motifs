@@ -10,6 +10,7 @@ import random
 import copy
 import math
 import json
+import warnings
 import numbers
 #import itertools
 import collections
@@ -25,7 +26,7 @@ from expected_entropy import expected_entropy, entropy
 
 class Genome():
     
-    def __init__(self, config_dict=None, diad_plcm_map=None, clone=None, input_file=None):
+    def __init__(self, config_dict=None, diad_plcm_map=None, clone=None, input_file=None, org_tag=None):
         
         if clone and input_file:
             raise ValueError("Genome can be cloned from another Genome or " +
@@ -37,14 +38,14 @@ class Genome():
         elif input_file:
             self._import(input_file, config_dict, diad_plcm_map)
         else:
-            self._non_copy_constructor(config_dict, diad_plcm_map)
+            self._non_copy_constructor(config_dict, diad_plcm_map, org_tag)
         
         # if clone is None:
         #     self._non_copy_constructor(config_dict, diad_plcm_map)
         # else:
         #     self._copy_constructor(clone)
     
-    def _non_copy_constructor(self, config_dict, diad_plcm_map):
+    def _non_copy_constructor(self, config_dict, diad_plcm_map, org_tag):
         ''' Creates a new random genome. '''
         
         # Set parameters from config file
@@ -115,6 +116,8 @@ class Genome():
         self.set_targets()
         
         self.translate_regulator()
+        
+        self.tag = org_tag
     
     def _copy_constructor(self, parent):
         ''' Copies attributes from an already existing genome (cloning it). '''
@@ -167,9 +170,15 @@ class Genome():
         self.spacers = copy.deepcopy(parent.spacers)
         self.targets = parent.targets[:]
         self.targets_binary = copy.deepcopy(parent.targets_binary)
+        
+        self.tag = parent.tag
     
     def _import(self, filepath, config_dict, diad_plcm_map):
         ''' Imports genome from JSON file. '''
+        
+        # Input JSON file
+        with open(filepath) as f:
+            d = json.load(f)
         
         # Parameters decided by the run config file
         # -----------------------------------------
@@ -177,7 +186,7 @@ class Genome():
         self.extra_FN_penalty = config_dict['extra_FN_penalty']
         self.mut_rate = config_dict['mut_rate']
         
-        # XXX Add warning about fix_* parameters
+        # The "fix_*" parameters are set by the config, not the organism file!
         self.fix_mu = config_dict['fix_mu']
         self.fix_sigma = config_dict['fix_sigma']
         self.fix_left  = config_dict['fix_left']
@@ -185,9 +194,6 @@ class Genome():
         
         # Parameters decided by the input JSON file
         # -----------------------------------------
-        
-        with open(filepath) as f:
-            d = json.load(f)
         
         self.G = d['G']
         self.gamma = d['gamma']
@@ -244,13 +250,15 @@ class Genome():
         self._set_targets_binary()
         # Set `regulator`
         self.translate_regulator()
+        
+        # Organism tag
+        self.tag = d['tag']
     
     def export(self, outfilepath=None):
         '''
         Exports the organism as a JSON file. If the path of the output file
         `outfilepath` is not specified, a python dictionary is returned, instead.
         '''
-        # XXX Update this dictionary
         out_dict = {'seq': self.seq,
                     'G': self.G,
                     'gamma': self.gamma,
@@ -267,7 +275,8 @@ class Genome():
                     'min_mu': self.min_mu, 'max_mu': self.max_mu,
                     'min_sigma': self.min_sigma, 'max_sigma': self.max_sigma,
                     'min_left': self.min_left, 'max_right': self.max_right,
-                    'pseudocounts': self.pseudocounts}
+                    'pseudocounts': self.pseudocounts,
+                    'tag': self.tag}
         if self.motif_n == 2:
             if self.connector_type == 'gaussian':
                 out_dict['mu']    = self.regulator['connectors'][0].mu
@@ -288,7 +297,7 @@ class Genome():
     def get_seq(self):
         '''
         Returns the genome sequence as a string, where the first L-1 letters are
-        repeated at the end of the string (where L is the length of each PSSM).
+        repeated at the end of the string, where L is the length of the PSSM model.
         In this way, the function provides an argument for the pssm.calculate
         function such that it will return G scores, instead of only G-L+1 scores.
         This accounts for genome circularity: PSSMs can be placed across the 'end'.
@@ -469,14 +478,6 @@ class Genome():
                     # Alternative definition of sigma based on spring constant (k)
                     # 0 <= x <= 5
                     x = 5 * self.nucl_seq_to_int(sigma_locus)/(4**self.sigma_res - 1)
-                    '''
-                    _sigmas = []
-                    for i in range(4**self.sigma_res):
-                        k = 10**(-5 * i / (4**self.sigma_res - 1))
-                        _sigmas.append(0.019235/(k**(1/2)))
-                    print("sigmas: ")
-                    print(_sigmas)
-                    '''
                     # 10^-5 <= k <= 1
                     k = 10**(-x)
                     # 0.019235 <= sigma <= 6.082641
@@ -599,6 +600,7 @@ class Genome():
         self._set_targets_binary()
     
     def _set_targets_binary(self):
+        ''' Sets the `targets_binary` attribute based on the current `targets` attribute. '''
         if self.targets_type == 'centroids':
             length = self.G
         else:
@@ -830,73 +832,163 @@ class Genome():
         else:
             return (threshold-score)/(threshold-score+1)
     
-    def mutate_base(self, base_position):
+    def mutate_base(self, mutable_regulator=True):
         ''' Point mutation of a randomly chosen nucleotide. '''
-        curr_base = self.seq[base_position]
+        # Random position
+        if mutable_regulator:
+            pos = random.randint(0, self.G-1)
+        else:
+            pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        curr_base = self.seq[pos]
         new_base = random.choice(self._bases)
-        self.seq = self.seq[:base_position] + new_base + self.seq[base_position+1:]
+        self.seq = self.seq[:pos] + new_base + self.seq[pos+1:]
         # Update ACGT content
         self.acgt[curr_base] -= 1
         self.acgt[new_base] += 1
+        # Update regulator if it was mutated
+        if mutable_regulator:
+            if pos < self.get_non_coding_start_pos():
+                self.translate_regulator()
     
-    # ==== INDELS ====================
-    # ================================
+    # ==== INDELS =============================================================
+    # =========================================================================
     
-    def insert_base(self):
+    def _update_targets_coord(self, genomic_pos, base, in_or_del):
+        ''' Updates the targets' coordinates after an insertion or a deletion. '''
+        
+        # Coordinates are simply genomic positions: within the interval [0, G-1]
+        # ----------------------------------------------------------------------
+        if self.motif_n == 1 or self.targets_type == 'centroids':
+            if in_or_del == 'in':
+                # Update coordinates after insertion
+                for i in range(len(self.targets)):
+                    if self.targets[i] >= genomic_pos:
+                        self.targets[i] += 1
+            
+            elif in_or_del == 'del':
+                # Update coordinates after deletion
+                for i in range(len(self.targets)):
+                    if self.targets[i] > genomic_pos:
+                        self.targets[i] -= 1
+            
+            else:
+                raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
+        
+        # Coordinates are NOT genomic positions: within the interval [0, (G^n)-1]
+        # -----------------------------------------------------------------------
+        else:
+            if in_or_del == 'in':
+                # Update coordinates after insertion
+                for i in range(len(self.targets)):
+                    l, r = divmod(self.targets[i], self.G)  # !!! Double-check
+                    changed = False
+                    if l >= genomic_pos:
+                        l += 1
+                        changed = True
+                    if r >= genomic_pos:
+                        r += 1
+                        changed = True
+                    # Update target coordinate
+                    if changed:
+                        left, right = divmod(self.targets[i], self.G)
+                        """
+                        print('Pos {} inserted. Target IDX: {} -> {}. L,R: ({},{}) -> ({},{})'.format(
+                            genomic_pos, self.targets[i], self.G*l+r, left, right, l, r))
+                        """
+                    self.targets[i] = self.G*l+r  # !!! Double-check
+            
+            elif in_or_del == 'del':
+                # Update coordinates after deletion
+                for i in range(len(self.targets)):
+                    l, r = divmod(self.targets[i], self.G)  # !!! Double-check
+                    if l > genomic_pos:
+                        l -= 1
+                    if r > genomic_pos:
+                        r -= 1
+                    # Update target coordinate
+                    self.targets[i] = self.G*l+r  # !!! Double-check
+            
+            else:
+                raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
+        self._set_targets_binary()
+    
+    def insert_base(self, mutable_regulator=True):
         ''' Inserts a random nucleotide. '''
-        # Randomly choose a position (outside the regulator CDS)
-        pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
-        # Randomly choose a base
+        # Random position
+        if mutable_regulator:
+            pos = random.randint(0, self.G-1)
+        else:
+            pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Randomly choose which base it will be
         base = random.choice(self._bases)
         # Update genome sequence
         self.seq = self.seq[:pos] + base + self.seq[pos:]
-        # Update coordinates
-        for i in range(len(self.targets)):
-            if self.targets[i] >= pos:
-                self.targets[i] += 1
+        # Update targets' coordinates
+        self._update_targets_coord(pos, base, 'in')
         # Update ACGT content
         self.acgt[base] += 1
+        # Update regulator if it was mutated
+        if mutable_regulator:
+            if pos < self.get_non_coding_start_pos():
+                self.translate_regulator()
     
-    def delete_base(self):
+    def delete_base(self, mutable_regulator=True):
         ''' Deletes a random nucleotide. '''
-        # Randomly chose a position (outside the regulator CDS)
-        pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+        # Random position
+        if mutable_regulator:
+            pos = random.randint(0, self.G-1)
+        else:
+            pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
         # Targeted base
         base = self.seq[pos]
         # Update genome sequence
         self.seq = self.seq[:pos] + self.seq[pos+1:]
-        # Update coordinates
-        for i in range(len(self.targets)):
-            if self.targets[i] > pos:
-                self.targets[i] -= 1
+        # Update targets' coordinates
+        self._update_targets_coord(pos, base, 'del')
         # Update ACGT content
         self.acgt[base] -= 1
+        # Update regulator if it was mutated
+        if mutable_regulator:
+            if pos < self.get_non_coding_start_pos():
+                self.translate_regulator()
     
-    def apply_indel(self):
+    def apply_indel(self, mutable_regulator=True):
         ''' Applies one insertion and one deletion. In this way, the value of G
         (the length of the genome) is preserved. '''
-        self.insert_base()
-        self.delete_base()
+        self.insert_base(mutable_regulator)
+        self.delete_base(mutable_regulator)
     
-    # ================================
-    # ================================
+    # =========================================================================
+    # =========================================================================
     
     
-    def mutate(self, mode='ev'):
+    def mutate(self, prob_indel, mode='ev', mutable_regulator=True):
         ''' Mutates the organism according to the mutation mode. '''
         if mode == 'ev':
-            self.mutate_ev()
+            self.mutate_ev(prob_indel, mutable_regulator)
         elif mode == 'rate':
             self.mutate_with_rate()
         else:
             raise ValueError("mode should be 'ev' or 'rate'.")
     
-    def mutate_ev(self):
-        ''' Applyies one and only one mutation (like in the ev program). '''
-        rnd_pos = random.randint(0, self.G - 1)
-        self.mutate_base(rnd_pos)
-        if rnd_pos < self.get_non_coding_start_pos():
-            self.translate_regulator()
+    def mutate_ev(self, prob_indel, mutable_regulator=True):
+        ''' Applyies either:
+            - INDEL: One insertion and one deletion (to keep genome size constant)
+            - SUB: Two base substitutions
+        So, two mutations in both cases. The probability of INDEL is `prob_indel`.
+        '''
+        
+        if random.random() > prob_indel:
+            # SUBSTITUTIONS
+            # Mutation 1
+            self.mutate_base(mutable_regulator)
+            # Mutation 2
+            self.mutate_base(mutable_regulator)
+            
+        else:
+            # INDELS
+            self.apply_indel(mutable_regulator)
+        
     
     def mutate_with_rate(self):
         '''
@@ -905,13 +997,11 @@ class Genome():
         number that depends on the mutation rate.
         '''
         n_mut_bases = np.random.binomial(self.G, self.mut_rate)
-        #n_mut_bases = int(self.G * self.mut_rate)
-        #n_mut_bases = np.random.poisson(self.G * self.mut_rate)
         if n_mut_bases > 0:
             mut_bases_positions = random.sample(range(self.G), k=n_mut_bases)
             for pos in mut_bases_positions:
                 self.mutate_base(pos)
-            
+            # Update regulator if it was mutated
             if min(mut_bases_positions) < self.get_non_coding_start_pos():
                 self.translate_regulator()
     

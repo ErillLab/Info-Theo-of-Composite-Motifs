@@ -8,7 +8,8 @@ TODO: Rename file 'evolve_reg_sys.py'
 '''
 
 
-#import cProfile
+# import cProfile
+# import numpy as np
 import time
 import random
 import json
@@ -192,6 +193,7 @@ def initialize_poplutaion(config_dict, diad_plcm_map, verbose):
     pop_size = config_dict['pop_size']
     pop_origin = config_dict['pop_origin']
     pop_dir_path = config_dict['pop_dir_path']
+    org_tag = config_dict['org_tag']
     
     # Generate population of random organisms
     if pop_origin == 'random':
@@ -209,8 +211,13 @@ def initialize_poplutaion(config_dict, diad_plcm_map, verbose):
                            ", but " + str(len(files)) + " files were found in " +
                            pop_dir_path + ". Effective pop size in this run will be " +
                            str(len(files))))
-        return [Genome(config_dict, diad_plcm_map, input_file=pop_dir_path + '/' + f) for f in files]
-        
+        return [Genome(config_dict, diad_plcm_map, input_file=pop_dir_path + '/' + f, org_tag=org_tag) for f in files]
+
+def is_competition(population):
+    ''' Returns True if population contains organisms with different tags, which
+    is used to keep track of subpopulations during competition experiments.
+    Returns False otherwise. '''
+    return len(set([org.tag for org in population])) > 1
 
 
 def main():
@@ -235,13 +242,13 @@ def main():
         rank = comm.Get_rank()
         run_tag = run_tag + '_' + str(rank)
     
-    pop_size = config_dict['pop_size']
     motif_n = config_dict['motif_n']
     update_period = config_dict['update_period']
     drift_time = config_dict['drift_time']
     max_n_gen = config_dict['max_n_gen']
     fitness_mode = config_dict['fitness_mode']
     mut_mode = config_dict['mut_mode']
+    prob_indel = config_dict['prob_indel']
     
     # Results directory
     results_dirpath = '../results/' + run_tag + '/'
@@ -255,21 +262,56 @@ def main():
         # Map diad placement indexes to genomic position of centroid
         diad_plcm_map = generate_diad_plcm_map(config_dict)
     else:
-        diad_plcm_map = None    
+        diad_plcm_map = None
     
     # INITIALIZE POPULATION
-    # population = [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
     population = initialize_poplutaion(config_dict, diad_plcm_map, verb)
+    competition_experiment = is_competition(population)
     
     # START EVOLUTIONARY SIMULATION
     solution_gen = None
     gen = 0
+    
+    # If it's a competition experiment
+    if competition_experiment:
+        
+        # Initialize competition report (CSV file) 
+        tag_types = list(set([org.tag for org in population]))
+        competition_report_fp = results_dirpath + 'competition_report.csv'
+        with open(competition_report_fp, 'w') as f:
+            for tag in tag_types:
+                f.write(str(tag) + ',')
+            f.write('\n')
+        
+        # Set `mutable_regulator` to False to ensure that the competing
+        # strategists don't modify their strategy over time
+        mutable_regulator = False
+    
+    else:
+        mutable_regulator = True
     
     # Save initial results for Generation 0
     if verb:
         print("\nGen:", gen)
     sorted_pop, sorted_fit = sort_pop_by_fit(population)
     export_org_data(sorted_pop[0], gen, results_dirpath, 'ev', verb)
+    # If it's a competition experiment, write starting frequencies in
+    # competition report (CSV file)
+    if competition_experiment:
+        # Store tag frequencies at Generation 0
+        tags = [org.tag for org in population]
+        N = len(population)
+        tag_freqs = []
+        for tag in tag_types:
+            tag_freqs.append(tags.count(tag)/N)
+        # Append to CSV file
+        with open(competition_report_fp, 'a') as f:
+            # Write one line of the CSV report
+            for freq in tag_freqs:
+                f.write(str(freq) + ',')
+            f.write('\n')
+        if verb:
+            print("Sub-populations:", dict(zip(tag_types, tag_freqs)))
     
     while not end_run(gen, solution_gen, drift_time, max_n_gen):
         
@@ -281,7 +323,7 @@ def main():
         # Mutation 
         # --------
         for org in population:
-            org.mutate(mut_mode)
+            org.mutate(prob_indel, mut_mode, mutable_regulator)
         
         # Fitness evaluation
         # ------------------
@@ -330,9 +372,25 @@ def main():
         # Store results
         # -------------
         if update_period:
+            # Export current best organism
             if gen % update_period == 0:
                 export_org_data(population[0], gen, results_dirpath, 'ev', verb)
         
+        # Update competition report (CSV file) if it's a competition experiment
+        if competition_experiment:
+            tags = [org.tag for org in population]
+            tag_freqs = []
+            for tag in tag_types:
+                tag_freqs.append(tags.count(tag)/N)
+            # Append to CSV file
+            with open(competition_report_fp, 'a') as f:
+                # Write one line of the CSV report
+                for freq in tag_freqs:
+                    f.write(str(freq) + ',')
+                f.write('\n')
+            if verb:
+                print("Sub-populations:", dict(zip(tag_types, tag_freqs)))
+                
         # Export first solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
             export_org_data(population[0], gen, results_dirpath, 'sol_first', verb)
