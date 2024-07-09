@@ -164,10 +164,12 @@ def export_org_data(org, gen, results_dirpath, files_tag='', verbose=True):
     # IC report (CSV) and Gaps report (JSON)
     org.study_info(path_start, gen, verbose)
 
-def end_run(gen, solution_gen, drift_time, max_n_gen):
+def end_run(gen, solution_gen, drift_time, max_n_gen, fixation):
     ''' Returns True if the run reached the end (according to input parameters).
     Returns False otherwise. '''
-    if solution_gen:
+    if fixation:
+        return True
+    elif solution_gen:
         # A solution was already found:
         # Stop after `drift_time`
         return gen >= solution_gen + drift_time
@@ -199,7 +201,7 @@ def initialize_poplutaion(config_dict, diad_plcm_map, verbose):
     if pop_origin == 'random':
         if verbose:
             print('Generating {} random organisms ...'.format(pop_size))
-        return [Genome(config_dict, diad_plcm_map) for i in range(pop_size)]
+        return [Genome(config_dict, diad_plcm_map, org_tag=org_tag) for i in range(pop_size)]
     
     # Import population from files
     elif pop_origin == 'files':
@@ -207,11 +209,11 @@ def initialize_poplutaion(config_dict, diad_plcm_map, verbose):
             print('Importing population from {} ...'.format(pop_dir_path))
         files = os.listdir(pop_dir_path)
         if len(files) != pop_size:
-            warnings.warn(("pop_size parameter is set to " + str(pop_size) +
+            warnings.warn(("\n\npop_size parameter is set to " + str(pop_size) +
                            ", but " + str(len(files)) + " files were found in " +
-                           pop_dir_path + ". Effective pop size in this run will be " +
-                           str(len(files))))
-        return [Genome(config_dict, diad_plcm_map, input_file=pop_dir_path + '/' + f, org_tag=org_tag) for f in files]
+                           pop_dir_path + ". The effective population size in " +
+                           "this run will be " + str(len(files)) + ".\n"))
+        return [Genome(config_dict, diad_plcm_map, input_file=pop_dir_path + '/' + f) for f in files]
 
 def is_competition(population):
     ''' Returns True if population contains organisms with different tags, which
@@ -249,6 +251,7 @@ def main():
     fitness_mode = config_dict['fitness_mode']
     mut_mode = config_dict['mut_mode']
     prob_indel = config_dict['prob_indel']
+    indel_size = config_dict['indel_size']
     
     # Results directory
     results_dirpath = '../results/' + run_tag + '/'
@@ -267,6 +270,7 @@ def main():
     # INITIALIZE POPULATION
     population = initialize_poplutaion(config_dict, diad_plcm_map, verb)
     competition_experiment = is_competition(population)
+    fixation = False
     
     # START EVOLUTIONARY SIMULATION
     solution_gen = None
@@ -313,7 +317,7 @@ def main():
         if verb:
             print("Sub-populations:", dict(zip(tag_types, tag_freqs)))
     
-    while not end_run(gen, solution_gen, drift_time, max_n_gen):
+    while not end_run(gen, solution_gen, drift_time, max_n_gen, fixation):
         
         gen += 1
         
@@ -323,7 +327,7 @@ def main():
         # Mutation 
         # --------
         for org in population:
-            org.mutate(prob_indel, mut_mode, mutable_regulator)
+            org.mutate(prob_indel, indel_size, mut_mode, mutable_regulator)
         
         # Fitness evaluation
         # ------------------
@@ -390,21 +394,28 @@ def main():
                 f.write('\n')
             if verb:
                 print("Sub-populations:", dict(zip(tag_types, tag_freqs)))
+            # Stop run if one subpopulation reached fixation
+            if len(set(tags))==1:
+                fixation = True
                 
         # Export first solution
         if is_max_fitness(best_fitness, fitness_mode) and not solution_gen:
             export_org_data(population[0], gen, results_dirpath, 'sol_first', verb)
             solution_gen = gen
     
-    # Export latest solution
-    if solution_gen:
-        export_org_data(population[0], gen, results_dirpath, 'sol_latest', verb)
-        print('\nDone. Results in ', results_dirpath)
+    # End of evolutionary simulation reached
+    if fixation:
+        print('\nFixation reached. Results in ', results_dirpath)
     else:
-        for filename in os.listdir(results_dirpath):
-            os.remove(results_dirpath + filename)
-        os.rmdir(results_dirpath)
-        print('{}: No solution obtained.'.format(results_dirpath))
+        # Export latest solution
+        if solution_gen:
+            export_org_data(population[0], gen, results_dirpath, 'sol_latest', verb)
+            print('\nDone. Results in ', results_dirpath)
+        else:
+            for filename in os.listdir(results_dirpath):
+                os.remove(results_dirpath + filename)
+            os.rmdir(results_dirpath)
+            print('{}: No solution obtained. Folder removed.'.format(results_dirpath))
 
 
 

@@ -853,8 +853,110 @@ class Genome():
     # ==== INDELS =============================================================
     # =========================================================================
     
-    def _update_targets_coord(self, genomic_pos, base, in_or_del):
-        ''' Updates the targets' coordinates after an insertion or a deletion. '''
+    # def _update_targets_coord(self, genomic_pos, base, in_or_del):
+    #     ''' Updates the targets' coordinates after an insertion or a deletion. '''
+        
+    #     # Coordinates are simply genomic positions: within the interval [0, G-1]
+    #     # ----------------------------------------------------------------------
+    #     if self.motif_n == 1 or self.targets_type == 'centroids':
+    #         if in_or_del == 'in':
+    #             # Update coordinates after insertion
+    #             for i in range(len(self.targets)):
+    #                 if self.targets[i] >= genomic_pos:
+    #                     self.targets[i] += 1
+            
+    #         elif in_or_del == 'del':
+    #             # Update coordinates after deletion
+    #             for i in range(len(self.targets)):
+    #                 if self.targets[i] > genomic_pos:
+    #                     self.targets[i] -= 1
+            
+    #         else:
+    #             raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
+        
+    #     # Coordinates are NOT genomic positions: within the interval [0, (G^n)-1]
+    #     # -----------------------------------------------------------------------
+    #     else:
+    #         if in_or_del == 'in':
+    #             # Update coordinates after insertion
+    #             for i in range(len(self.targets)):
+    #                 l, r = divmod(self.targets[i], self.G)  # !!! Double-check
+    #                 changed = False
+    #                 if l >= genomic_pos:
+    #                     l += 1
+    #                     changed = True
+    #                 if r >= genomic_pos:
+    #                     r += 1
+    #                     changed = True
+    #                 # Update target coordinate
+    #                 if changed:
+    #                     left, right = divmod(self.targets[i], self.G)
+    #                     """
+    #                     print('Pos {} inserted. Target IDX: {} -> {}. L,R: ({},{}) -> ({},{})'.format(
+    #                         genomic_pos, self.targets[i], self.G*l+r, left, right, l, r))
+    #                     """
+    #                 self.targets[i] = self.G*l+r  # !!! Double-check
+            
+    #         elif in_or_del == 'del':
+    #             # Update coordinates after deletion
+    #             for i in range(len(self.targets)):
+    #                 l, r = divmod(self.targets[i], self.G)  # !!! Double-check
+    #                 if l > genomic_pos:
+    #                     l -= 1
+    #                 if r > genomic_pos:
+    #                     r -= 1
+    #                 # Update target coordinate
+    #                 self.targets[i] = self.G*l+r  # !!! Double-check
+            
+    #         else:
+    #             raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
+    #     self._set_targets_binary()
+    
+    # def insert_base(self, mutable_regulator=True):
+    #     ''' Inserts a random nucleotide. '''
+    #     # Random position
+    #     if mutable_regulator:
+    #         pos = random.randint(0, self.G-1)
+    #     else:
+    #         pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+    #     # Randomly choose which base it will be
+    #     base = random.choice(self._bases)
+    #     # Update genome sequence
+    #     self.seq = self.seq[:pos] + base + self.seq[pos:]
+    #     # Update targets' coordinates
+    #     self._update_targets_coord(pos, base, 'in')
+    #     # Update ACGT content
+    #     self.acgt[base] += 1
+    #     # Update regulator if it was mutated
+    #     if mutable_regulator:
+    #         if pos < self.get_non_coding_start_pos():
+    #             self.translate_regulator()
+    
+    # def delete_base(self, mutable_regulator=True):
+    #     ''' Deletes a random nucleotide. '''
+    #     # Random position
+    #     if mutable_regulator:
+    #         pos = random.randint(0, self.G-1)
+    #     else:
+    #         pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
+    #     # Targeted base
+    #     base = self.seq[pos]
+    #     # Update genome sequence
+    #     self.seq = self.seq[:pos] + self.seq[pos+1:]
+    #     # Update targets' coordinates
+    #     self._update_targets_coord(pos, base, 'del')
+    #     # Update ACGT content
+    #     self.acgt[base] -= 1
+    #     # Update regulator if it was mutated
+    #     if mutable_regulator:
+    #         if pos < self.get_non_coding_start_pos():
+    #             self.translate_regulator()
+    
+    # @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @
+    
+    def _update_targets_coord_new(self, genomic_pos, n, in_or_del):
+        '''
+        '''
         
         # Coordinates are simply genomic positions: within the interval [0, G-1]
         # ----------------------------------------------------------------------
@@ -863,13 +965,13 @@ class Genome():
                 # Update coordinates after insertion
                 for i in range(len(self.targets)):
                     if self.targets[i] >= genomic_pos:
-                        self.targets[i] += 1
+                        self.targets[i] += n
             
             elif in_or_del == 'del':
                 # Update coordinates after deletion
                 for i in range(len(self.targets)):
-                    if self.targets[i] > genomic_pos:
-                        self.targets[i] -= 1
+                    if self.targets[i] >= genomic_pos:
+                        self.targets[i] -= n
             
             else:
                 raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
@@ -883,10 +985,10 @@ class Genome():
                     l, r = divmod(self.targets[i], self.G)  # !!! Double-check
                     changed = False
                     if l >= genomic_pos:
-                        l += 1
+                        l += n
                         changed = True
                     if r >= genomic_pos:
-                        r += 1
+                        r += n
                         changed = True
                     # Update target coordinate
                     if changed:
@@ -901,77 +1003,76 @@ class Genome():
                 # Update coordinates after deletion
                 for i in range(len(self.targets)):
                     l, r = divmod(self.targets[i], self.G)  # !!! Double-check
-                    if l > genomic_pos:
-                        l -= 1
-                    if r > genomic_pos:
-                        r -= 1
+                    if l >= genomic_pos:
+                        l -= n
+                    if r >= genomic_pos:
+                        r -= n
                     # Update target coordinate
                     self.targets[i] = self.G*l+r  # !!! Double-check
             
             else:
                 raise ValueError("'in_or_del' argument must be 'in' or 'del'.")
-        self._set_targets_binary()
+        #self._set_targets_binary()
+        
     
-    def insert_base(self, mutable_regulator=True):
+    def insert(self, n=1, mutable_regulator=True):
         ''' Inserts a random nucleotide. '''
         # Random position
         if mutable_regulator:
-            pos = random.randint(0, self.G-1)
+            pos = random.randint(0, self.G-n)
         else:
-            pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
-        # Randomly choose which base it will be
-        base = random.choice(self._bases)
+            pos = random.randint(self.get_non_coding_start_pos(), self.G-n)
+        # Insertion sequence
+        insertion_seq = ''.join(random.choices(self._bases, k=n))
         # Update genome sequence
-        self.seq = self.seq[:pos] + base + self.seq[pos:]
+        self.seq = self.seq[:pos] + insertion_seq + self.seq[pos:]
         # Update targets' coordinates
-        self._update_targets_coord(pos, base, 'in')
+        self._update_targets_coord_new(pos, n, 'in')
         # Update ACGT content
-        self.acgt[base] += 1
+        for base in insertion_seq:
+            self.acgt[base] += 1
         # Update regulator if it was mutated
         if mutable_regulator:
             if pos < self.get_non_coding_start_pos():
                 self.translate_regulator()
     
-    def delete_base(self, mutable_regulator=True):
+    def delete(self, n=1, mutable_regulator=True):
         ''' Deletes a random nucleotide. '''
         # Random position
         if mutable_regulator:
-            pos = random.randint(0, self.G-1)
+            pos = random.randint(0, self.G-n)
         else:
-            pos = random.randint(self.get_non_coding_start_pos(), self.G-1)
-        # Targeted base
-        base = self.seq[pos]
+            pos = random.randint(self.get_non_coding_start_pos(), self.G-n)
+        # Deletion sequence
+        deletion_seq = self.seq[pos:pos+n]
         # Update genome sequence
-        self.seq = self.seq[:pos] + self.seq[pos+1:]
+        self.seq = self.seq[:pos] + self.seq[pos+n:]
         # Update targets' coordinates
-        self._update_targets_coord(pos, base, 'del')
+        self._update_targets_coord_new(pos, n, 'del')
         # Update ACGT content
-        self.acgt[base] -= 1
+        for base in deletion_seq:
+            self.acgt[base] -= 1
         # Update regulator if it was mutated
         if mutable_regulator:
             if pos < self.get_non_coding_start_pos():
                 self.translate_regulator()
+    # @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @ @
     
-    def apply_indel(self, mutable_regulator=True):
-        ''' Applies one insertion and one deletion. In this way, the value of G
-        (the length of the genome) is preserved. '''
-        self.insert_base(mutable_regulator)
-        self.delete_base(mutable_regulator)
     
     # =========================================================================
     # =========================================================================
     
     
-    def mutate(self, prob_indel, mode='ev', mutable_regulator=True):
+    def mutate(self, prob_indel, indel_size=1, mode='ev', mutable_regulator=True):
         ''' Mutates the organism according to the mutation mode. '''
         if mode == 'ev':
-            self.mutate_ev(prob_indel, mutable_regulator)
+            self.mutate_ev(prob_indel, indel_size, mutable_regulator)
         elif mode == 'rate':
             self.mutate_with_rate()
         else:
             raise ValueError("mode should be 'ev' or 'rate'.")
     
-    def mutate_ev(self, prob_indel, mutable_regulator=True):
+    def mutate_ev(self, prob_indel, indel_size=1, mutable_regulator=True):
         ''' Applyies either:
             - INDEL: One insertion and one deletion (to keep genome size constant)
             - SUB: Two base substitutions
@@ -987,7 +1088,9 @@ class Genome():
             
         else:
             # INDELS
-            self.apply_indel(mutable_regulator)
+            self.insert(indel_size, mutable_regulator)
+            self.delete(indel_size, mutable_regulator)
+            self._set_targets_binary()
         
     
     def mutate_with_rate(self):
