@@ -3,8 +3,6 @@
 
 Evolve transcriptional regulatory system.
 
-TODO: Rename file 'evolve_reg_sys.py'
-
 '''
 
 
