@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import warnings
 
 
 def get_gen(filename):
@@ -155,6 +156,7 @@ def process_data(resultsdir, ic_correction='true_Rseq', sample_size=None):
     for f in os.listdir(resultsdir):
         # Skip files if present
         if not os.path.isdir(resultsdir + f):
+            print('Not a folder:  ' + resultsdir + f)
             continue
         # Remove empty subfolders
         if len(os.listdir(resultsdir + f)) == 0:
@@ -167,8 +169,11 @@ def process_data(resultsdir, ic_correction='true_Rseq', sample_size=None):
                 if fname.startswith('sol_latest_'):
                     contains_latest_sol = True
             if not contains_latest_sol:
+                '''
                 print('Removing incomplete subfolder:', f)
                 shutil.rmtree(resultsdir + f)
+                '''
+                warnings.warn('Incomplete folder: ' + f)
     
     # Input folders
     folders = [fld for fld in os.listdir(resultsdir) if os.path.isdir(resultsdir + fld)]
@@ -202,7 +207,9 @@ def process_data(resultsdir, ic_correction='true_Rseq', sample_size=None):
         # ic_reports_gen = [get_gen(f) for f in ic_reports]
         # sorted_ic_reports = [report for gen, report in sorted(zip(ic_reports_gen, ic_reports))]
         if len(sol_df_list) != 2:
-            raise ValueError('There should be a "sol_first_*" and a "sol_latest_*".')
+            warnings.warn('There should be a "sol_first_*" and a "sol_latest_*".')
+            continue
+            ###raise ValueError('There should be a "sol_first_*" and a "sol_latest_*".')
         initial.append(parse_report(resultsdir + folder + '/' + sol_df_list[0]))
         drifted.append(parse_report(resultsdir + folder + '/' + sol_df_list[1]))
         
@@ -216,7 +223,7 @@ def process_data(resultsdir, ic_correction='true_Rseq', sample_size=None):
     
     return initial_df, drifted_df, all_ev, parameters
 
-def study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size=None):
+def study_spacer_stacked_barplot(results_dir, drifted_df_list, parameters, sample_size=None):
     '''
     Saves a stacked barplot for the Spacer-Study as a PNG file.
       - `drifted_df_list` is a list of pandas dataframes (with the 'drifted' values)
@@ -259,30 +266,83 @@ def study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size=None):
     plt.bar(x, y3, bottom=y1+y2, yerr=([0] + Rtot_CI_vals), capsize=4)
     # Labels and legend
     plt.ylabel("Information (bits)")
-    plt.legend(["Rfreq(diad)", "Rspacer", "Rseq1", "Rseq2"])
-    plt.title("Diad information content")
+    plt.legend([r'$R_{frequency}$', r'$R_{spacer}$', r'$R_{sequence(1)}$', r'$R_{sequence(2)}$'])
+    ###plt.title("Dyad information content")
     plt.ylim((0,maxIC))
     plt.yticks(list(plt.yticks()[0]) + [Rfreq, maxIC])
     plt.gca().get_yticklabels()[-2].set_color("red")
     plt.gca().get_yticklabels()[-1].set_color("red")
     
-    xlabels = ['Maximum IC'] + ['Rspacer = ' + str(int(s)) + ' bits' for s in y1[1:]]
-    plt.xticks(x, xlabels, rotation='vertical')
+    xlabels = ['Maximum IC'] + [r'$R_{spacer}$ = ' + str(int(s)) + ' bits' for s in y1[1:]]
+    plt.xticks(x, xlabels, rotation=45, ha='right')
     
     # Save Figure
     if sample_size:
         filename = 'Study_Spacer_Barplot_' + str(sample_size) + '.png'
     else:
         filename = 'Study_Spacer_Barplot_ALL.png'
-    filepath = results_dir + filename
-    plt.savefig(filepath, bbox_inches="tight", dpi=600)
+    figure_filepath = results_dir + filename
+    plt.savefig(figure_filepath, bbox_inches="tight", dpi=600)
     plt.close()
+    print('Plot saved here: ' + figure_filepath)
 
 
+# ================================================
+# Plot for n=1 case, to reproduce (Schneider 2000)
+# ================================================
+
+
+def plot_Rsequence_Ev(results_path):
+    '''
+    Saves a line plot as a PNG, showing the evolution of Rsequence in runs
+    where n=1. It can be used to reproduce Figure 2 from (Schneider 2000).
+    '''
+    parameters = read_json_file(results_path + '/parameters.json')
+    update_period = parameters['update_period']
+    
+    Rseq_list = []
+    gen_list = []
+    gen = 0
+    ic_report_path = '{}/ev_gen_{}_ic_report.csv'.format(results_path, gen)
+    while os.path.exists(ic_report_path):
+        df = parse_report(ic_report_path)
+        df.index = df['IC Correction'].to_list()
+        Rseq_list.append(df.loc['true_Rseq','Rseq_targets'])
+        gen_list.append(gen)
+        gen += update_period
+        ic_report_path = '{}/ev_gen_{}_ic_report.csv'.format(results_path, gen)
+    
+    # Rfrequency
+    Rfrequency = - np.log2(parameters['gamma'] / parameters['G'])
+    
+    # Save data as CSV table
+    df = pd.DataFrame({'Generation': gen_list, 'Rsequence': Rseq_list})
+    table_filepath = results_path +'/Rsequence_evolution_data.csv'
+    df.to_csv(table_filepath, index=False)
+    
+    # Save line plot as PNG file
+    plt.hlines(Rfrequency, 0, len(Rseq_list),color='red', linestyle='dashed',
+               label=r'$R_{frequency}$', zorder=2)
+    plt.plot(gen_list, Rseq_list, label=r'$R_{sequence}$', zorder=1)
+    y_axis_lower_bound = min(-1, min(Rseq_list))
+    y_axis_upper_bound = parameters['motif_len'] * 2
+    plt.ylim((y_axis_lower_bound,y_axis_upper_bound))
+    plt.xlabel('Generation')
+    plt.ylabel('Information (bits)')
+    plt.legend()
+    figure_filepath = results_path + '/Rsequence_evolution.png'
+    plt.savefig(figure_filepath, bbox_inches="tight", dpi=600)
+    plt.close()
+    print('Plot saved here: ' + figure_filepath)
+
+
+# Reproduce (Schneider 2000)
+results_path = '../results/20241018161731_Reproduce_Schneider'
+plot_Rsequence_Ev(results_path)
 
 
 # ===============
-# Analyze results
+# Analyze results (old)
 # ===============
 
 
@@ -315,6 +375,11 @@ make_3d_plot(drifted_df, parameters)
 # XXX ...
 
 results_dir = '../results/Study_Spacer_New/'
+results_dir = '../../RESULTS/Study_Spacer_New/'
+
+# Apply new code on renamed old files
+results_dir = '../../RESULTS/Study_Spacer_New_Repr_Renamed3/'
+
 sample_size = 20
 
 
@@ -322,34 +387,105 @@ drifted_df_list = []
 for subfolder in os.listdir(results_dir):
     if not os.path.isdir(results_dir + subfolder):
         continue
-    initial_df, drifted_df, all_ev, parameters = process_data(results_dir + '/' + subfolder + '/', sample_size)
+    initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
     drifted_df_list.append(drifted_df)
 
-# Make Stacked Barplot
-study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size)
+# Stacked Barplot
+# ---------------
+study_spacer_stacked_barplot(results_dir, drifted_df_list, parameters, sample_size)
 
 # 3D plot
+# -------
 merged_df = merge_dataframes(drifted_df_list)
 make_3d_plot(merged_df, parameters)
 
 
+# Print names of runs that were used
+'''
+results_dir = '../../RESULTS/Study_Spacer_New/'
+sample_size = 20
+for subfolder in os.listdir(results_dir):
+    # Skip files if present
+    if not os.path.isdir(results_dir + subfolder):
+        continue
+    resultsdir = results_dir + '/' + subfolder + '/'
+    folders = [fld for fld in os.listdir(resultsdir) if os.path.isdir(resultsdir + fld)]
+    print(folders[:sample_size])
+'''
+
+# 2D plot
+# -------
+
+Rseq_list = [df['Rseq1_targets'].mean() + df['Rseq2_targets'].mean() for df in drifted_df_list[:sample_size]]
+Rspacer_list = [df.loc[0,'Rspacer_targets'] for df in drifted_df_list]
+gamma = parameters['gamma']
+G = parameters['G']
+n = parameters['motif_n']
+# OVERALL LOWER BOUND: the highest between the functional lower bound and the
+# informational lower bound
+min_Rspacer = max(np.log2(gamma), np.log2(G/gamma))
+# Upper bound is always log2(G)
+max_Rspacer = np.log2(G)
+
+
+min_Rsequence = 0
+max_Rsequence = n * np.log2(G/gamma)
+margin = 0.5
+
+plt.xlim((0, max_Rspacer + margin))
+plt.ylim((0, max_Rsequence + margin))
+# Vertical lines for Rspacer bounds
+plt.vlines(min_Rspacer, ymin=0, ymax=max_Rsequence + margin, colors='grey', linestyles='dashed', label='Min Rspacer',)
+plt.vlines(max_Rspacer, ymin=0, ymax=max_Rsequence + margin, colors='black', linestyles='dotted', label='Max Rspacer',)
+
+# Theoretical solutions space
+x1, x2 = min_Rspacer, max_Rspacer
+y1, y2 = np.log2(G**n / gamma) - x1, np.log2(G**n / gamma) - x2
+plt.plot([x1, x2], [y1, y2], color='red', label='Solution space')
+
+# Datapoints
+plt.scatter(Rspacer_list, Rseq_list, label='Evolved')
+plt.xlabel(r'$R_{spacer}$ (bits)')
+plt.ylabel(r'$R_{sequence}$ (bits)')
+
+plt.xticks(list(range(int(np.ceil(max_Rspacer))   + 1)))
+plt.yticks(list(range(int(np.ceil(max_Rsequence)) + 1)))
+plt.gca().set_aspect('equal')
+plt.grid(alpha=0.5)
+#plt.legend(framealpha=1, loc='upper left')
+plt.legend()
+figure_filepath = results_dir + '2D_plot_with_sim_data.png'
+plt.savefig(figure_filepath, bbox_inches='tight', dpi=600)
+#plt.show()
+plt.close()
+print('Plot saved here: ' + figure_filepath)
+
+
+
 
 # =============
-# AUPRC_fitness
+# AUPRC_fitness (old)
 # =============
 
 results_dir = '../../RESULTS/AUPRC_fitness/'
+results_dir = '../../RESULTS/For_New_Spring_Const_Evo/'
+
 sample_size = None
 
 # XXX
 subfolder = 'Gauss_9sites'
 subfolder = 'Gauss_16sites'
 subfolder = 'Unif_16sites'
+subfolder = 'three_vals_histogram'
+subfolder = 'one_val_histogram'
+subfolder = 'seven_vals_histogram'
+
+###parameters = read_json_file(results_dir + subfolder + '/20241003155050_0' + '/parameters.json')
 
 initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
 
 # Make Stacked Barplot
-stacked_barplots(initial_df, drifted_df, parameters, filename=subfolder+"_StackedBarPlot0000")
+stacked_barplots(initial_df, drifted_df, parameters, filename=subfolder+"_StackedBarPlot")
 
 # Optimal spring constant
 sp = parameters['spacers']
@@ -386,44 +522,58 @@ np.mean(np.log10(k_values))
 # ev spring constant
 # ------------------
 
-meta_ev_sigmas = dict()
-meta_ev_variances = dict()
-meta_ev_k_values = dict()
-
-for fldr in os.listdir(results_dir + subfolder):
-    fldr_content = os.listdir(results_dir + subfolder + '/' + fldr)
-    org_f = [f for f in fldr_content if (f.startswith('ev_') and f.endswith('org.json'))]
-    org_f = sort_filenames_by_gen(org_f)
+def study_stiffness_evolution(subfolder):
     
-    ev_sigmas = []
-    ev_variances = []
-    ev_k_values = []
-    for f in org_f:
-        org = read_json_file(results_dir + subfolder + '/' + fldr + '/' + f)
-        ev_sigmas.append(org['sigma'])
-        ev_variances.append(org['sigma']**2)
-        ev_k_values.append((0.019235/org['sigma'])**2)
+    meta_ev_sigmas = dict()
+    meta_ev_variances = dict()
+    meta_ev_k_values = dict()
     
-    # meta_ev_sigmas.append(ev_sigmas)
-    # meta_ev_variances.append(ev_variances)
-    # meta_ev_k_values.append(ev_k_values)
+    for fldr in os.listdir(results_dir + subfolder):
+        fldr_content = os.listdir(results_dir + subfolder + '/' + fldr)
+        org_f = [f for f in fldr_content if (f.startswith('ev_') and f.endswith('org.json'))]
+        org_f = sort_filenames_by_gen(org_f)
+        
+        ev_sigmas = []
+        ev_variances = []
+        ev_k_values = []
+        for f in org_f:
+            org = read_json_file(results_dir + subfolder + '/' + fldr + '/' + f)
+            ev_sigmas.append(org['sigma'])
+            ev_variances.append(org['sigma']**2)
+            ev_k_values.append((0.019235/org['sigma'])**2)
+        
+        # meta_ev_sigmas.append(ev_sigmas)
+        # meta_ev_variances.append(ev_variances)
+        # meta_ev_k_values.append(ev_k_values)
+        
+        meta_ev_sigmas[fldr] = ev_sigmas
+        meta_ev_variances[fldr] = ev_variances
+        meta_ev_k_values[fldr] = ev_k_values
     
-    meta_ev_sigmas[fldr] = ev_sigmas
-    meta_ev_variances[fldr] = ev_variances
-    meta_ev_k_values[fldr] = ev_k_values
+    n_gen = min([len(meta_ev_k_values[run]) for run in meta_ev_k_values])
+    n_gen_max = max([len(meta_ev_k_values[run]) for run in meta_ev_k_values])
+    
+    # Make dataframes (Missing values at the end as NaNs, due to different lengths of the columns)
+    meta_ev_sigmas    = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_sigmas.items()]))
+    meta_ev_variances = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_variances.items()]))
+    meta_ev_k_values  = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_k_values.items()]))
+    
+    
+    # Add column for the average
+    meta_ev_sigmas['Average']    = meta_ev_sigmas.mean(axis=1)
+    meta_ev_variances['Average'] = meta_ev_variances.mean(axis=1)
+    meta_ev_k_values['Average']  = meta_ev_k_values.mean(axis=1)
+    
+    # Add column for k estimate
+    meta_ev_sigmas['k of E[sigma]']  = [(0.019235/sigma)**2 for sigma in meta_ev_sigmas['Average']]
+    meta_ev_variances['k of E[var]'] = [(0.019235**2/var) for var in meta_ev_variances['Average']]
+    meta_ev_k_values['k of E[k]']    = meta_ev_k_values['Average']
+    
+    return meta_ev_sigmas, meta_ev_variances, meta_ev_k_values, n_gen, n_gen_max
 
-n_gen = min([len(meta_ev_k_values[run]) for run in meta_ev_k_values])
-
-# Make dataframes (Missing values at the end as NaNs, due to different lengths of the columns)
-meta_ev_sigmas    = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_sigmas.items()]))
-meta_ev_variances = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_variances.items()]))
-meta_ev_k_values  = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_k_values.items()]))
+meta_ev_sigmas, meta_ev_variances, meta_ev_k_values, n_gen, n_gen_max = study_stiffness_evolution(subfolder)
 
 
-# Add column for the average
-meta_ev_sigmas['Average']    = meta_ev_sigmas.mean(axis=1)
-meta_ev_variances['Average'] = meta_ev_variances.mean(axis=1)
-meta_ev_k_values['Average']  = meta_ev_k_values.mean(axis=1)
 
 
 
@@ -447,7 +597,36 @@ plt.savefig('SPRING_CONSTANT_evolution0.png', dpi=300)
 
 
 
+# For extra Figure in paper
+key = '20240923161633_6'
+
+plt.rcParams.update({'font.size': 14})
+plt.plot(meta_ev_k_values[key], label=r'$\kappa$: spring constant of most fit organism')
+plt.hlines(opt_k, xmin=0, xmax=len(meta_ev_k_values[key]),
+           colors='red', linestyles='dashed', label=r'$\kappa_{opt}$: predicted optimal spring constant')
+plt.xlabel('generation')
+plt.ylabel('spring constant (N/m)')
+plt.xlim((0,100))  # !!! < < < < < < < < < < < < < < < < < < < < < < < < < < < <
+plt.ylim((0,0.001))
+plt.legend()
+plt.show()
+
+plt.tight_layout()
+plt.savefig('SPRING_CONSTANT_evolution0.png', dpi=300)
+
+
+
+
+
+
+
+
+
+
+
 # Average across runs
+# -------------------
+
 
 # avg_sigma = []
 # avg_var = []
@@ -461,10 +640,7 @@ plt.savefig('SPRING_CONSTANT_evolution0.png', dpi=300)
 # avg2 = [(0.019235**2/var) for var in avg_var]
 # avg3 = avg_k[:]
 
-# Add column for k estimate
-meta_ev_sigmas['k of E[sigma]']  = [(0.019235/sigma)**2 for sigma in meta_ev_sigmas['Average']]
-meta_ev_variances['k of E[var]'] = [(0.019235**2/var) for var in meta_ev_variances['Average']]
-meta_ev_k_values['k of E[k]']    = meta_ev_k_values['Average']
+
 
 # avg1 = [(0.019235/sigma)**2 for sigma in avg_sigma]
 # avg2 = [(0.019235**2/var) for var in avg_var]
@@ -486,7 +662,7 @@ plt.plot(meta_ev_variances['k of E[var]'], label='from E[Var]')
 plt.plot(meta_ev_k_values['k of E[k]'], label='from E[k]')
 plt.hlines(opt_k, xmin=0, xmax=len(meta_ev_sigmas['k of E[sigma]']), colors='red')
 plt.ylabel('spring constant (N/m)')
-#plt.ylim((-5,0))
+#plt.ylim((0,0.005))
 plt.legend()
 
 
@@ -503,6 +679,8 @@ cols = ['20240506163533_0', '20240506163533_1', '20240506163533_10',
 #        '20240507003158_5', '20240507003158_6', '20240507003158_9',
 #        '20240507003159_10', '20240507003159_4']
 
+cols = list(meta_ev_sigmas.columns)[:-2]
+
 k_estimates = []
 iteration = []
 for col in cols:
@@ -512,10 +690,12 @@ for col in cols:
 new_dict = {'k estimates': k_estimates, 'iter': iteration}
 new_df = pd.DataFrame(new_dict)
 
-for interval in [10, 25, 50, 95]:
+for interval in [10, 25, 50, 95, 100]:
     plot = sns.lineplot(data=new_df, x='iter', y='k estimates', estimator=np.median,
                         color="C0", errorbar=('ci', interval))
-#plot.set(ylim=(0, max(new_df['k estimates'])))
+# plot.set(ylim=(0, max(new_df['k estimates'])))
+plot.set(ylim=(0, 0.005))
+
 plot.axhline(y=opt_k)
 
 
@@ -525,10 +705,10 @@ plot.axhline(y=opt_k)
 #         '20240507003158_14', '20240507003158_15', '20240507003158_2',
 #         '20240507003158_5', '20240507003158_6', '20240507003158_9',
 #         '20240507003159_10', '20240507003159_4']
-
+plt.ylim((0,0.005))
 sns.lineplot(data=meta_ev_k_values.loc[:,cols], estimator="median", errorbar=("pi", 50))
 sns.lineplot().axhline(y=opt_k)
-
+plt.ylim((0,0.005))
 
 
 # Final k values
@@ -549,6 +729,245 @@ plt.ylabel('spring constant (N/m)')
 plt.ylim((-5,0))
 
 
+# =============================================
+# For paper Figure on spring constant evolution
+# =============================================
+
+results_dir = '../../RESULTS/For_New_Spring_Const_Evo/'
+sample_size = None
+
+
+subfolder_5 = 'Gauss_9sites'
+subfolder_3 = 'three_vals_histogram'
+subfolder_1 = 'one_val_histogram'
+subfolder_7 = 'seven_vals_histogram'
+
+
+def study_stiffness_evolution(subfolder):
+    
+    meta_ev_sigmas = dict()
+    meta_ev_variances = dict()
+    meta_ev_k_values = dict()
+    
+    for fldr in os.listdir(results_dir + subfolder):
+        fldr_content = os.listdir(results_dir + subfolder + '/' + fldr)
+        org_f = [f for f in fldr_content if (f.startswith('ev_') and f.endswith('org.json'))]
+        org_f = sort_filenames_by_gen(org_f)
+        
+        ev_sigmas = []
+        ev_variances = []
+        ev_k_values = []
+        for f in org_f:
+            org = read_json_file(results_dir + subfolder + '/' + fldr + '/' + f)
+            ev_sigmas.append(org['sigma'])
+            ev_variances.append(org['sigma']**2)
+            ev_k_values.append((0.019235/org['sigma'])**2)
+        
+        # meta_ev_sigmas.append(ev_sigmas)
+        # meta_ev_variances.append(ev_variances)
+        # meta_ev_k_values.append(ev_k_values)
+        
+        meta_ev_sigmas[fldr] = ev_sigmas
+        meta_ev_variances[fldr] = ev_variances
+        meta_ev_k_values[fldr] = ev_k_values
+    
+    n_gen = min([len(meta_ev_k_values[run]) for run in meta_ev_k_values])
+    n_gen_max = max([len(meta_ev_k_values[run]) for run in meta_ev_k_values])
+    
+    # Make dataframes (Missing values at the end as NaNs, due to different lengths of the columns)
+    meta_ev_sigmas    = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_sigmas.items()]))
+    meta_ev_variances = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_variances.items()]))
+    meta_ev_k_values  = pd.DataFrame(dict([(k, pd.Series(v)) for (k, v) in meta_ev_k_values.items()]))
+    
+    
+    # Add column for the average
+    meta_ev_sigmas['Average']    = meta_ev_sigmas.mean(axis=1)
+    meta_ev_variances['Average'] = meta_ev_variances.mean(axis=1)
+    meta_ev_k_values['Average']  = meta_ev_k_values.mean(axis=1)
+    
+    # Add column for k estimate
+    meta_ev_sigmas['k of E[sigma]']  = [(0.019235/sigma)**2 for sigma in meta_ev_sigmas['Average']]
+    meta_ev_variances['k of E[var]'] = [(0.019235**2/var) for var in meta_ev_variances['Average']]
+    meta_ev_k_values['k of E[k]']    = meta_ev_k_values['Average']
+    
+    return meta_ev_sigmas, meta_ev_variances, meta_ev_k_values, n_gen, n_gen_max
+
+
+def make_df_for_avg_spring_const_plot(meta_ev_sigmas, meta_ev_k_values, update_period):
+    cols = list(meta_ev_sigmas.columns)[:-2]
+    
+    k_estimates = []
+    iteration = []
+    for col in cols:
+        ser = meta_ev_k_values[col].dropna()
+        k_estimates += ser.to_list()
+        iters = ser.index.to_list()
+        
+        iteration += [it * update_period for it in iters]
+    new_dict = {'k estimates': k_estimates, 'iter': iteration}
+    new_df = pd.DataFrame(new_dict)
+    return new_df
+
+THRSH = 15
+
+initial_df_7, drifted_df_57, all_ev_7, parameters_7 = process_data(results_dir + subfolder_7 + '/', sample_size)
+meta_ev_sigmas_7, meta_ev_variances_7, meta_ev_k_values_7, n_gen_7, n_gen_max_7 = study_stiffness_evolution(subfolder_7)
+meta_ev_sigmas_7 = meta_ev_sigmas_7.dropna(thresh=THRSH)
+meta_ev_k_values_7 = meta_ev_k_values_7.dropna(thresh=THRSH)
+n_iter_7 = len(meta_ev_k_values_7)
+opt_k_7 = (0.019235/np.std(parameters_7['spacers']))**2
+#new_df_7 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_7, meta_ev_k_values_7)
+
+# initial_df_5, drifted_df_5, all_ev_5, parameters_5 = process_data(results_dir + subfolder_5 + '/', sample_size)
+# meta_ev_sigmas_5, meta_ev_variances_5, meta_ev_k_values_5, n_gen_5, n_gen_max_5 = study_stiffness_evolution(subfolder_5)
+# opt_k_5 = (0.019235/np.std(parameters_5['spacers']))**2
+# new_df_5 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_5, meta_ev_k_values_5)
+
+initial_df_3, drifted_df_3, all_ev_3, parameters_3 = process_data(results_dir + subfolder_3 + '/', sample_size)
+meta_ev_sigmas_3, meta_ev_variances_3, meta_ev_k_values_3, n_gen_3, n_gen_max_3 = study_stiffness_evolution(subfolder_3)
+meta_ev_sigmas_3 = meta_ev_sigmas_3.dropna(thresh=THRSH)
+meta_ev_k_values_3 = meta_ev_k_values_3.dropna(thresh=THRSH)
+n_iter_3 = len(meta_ev_k_values_3)
+opt_k_3 = (0.019235/np.std(parameters_3['spacers']))**2
+#new_df_3 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_3, meta_ev_k_values_3)
+
+# initial_df_1, drifted_df_1, all_ev_1, parameters_1 = process_data(results_dir + subfolder_1 + '/', sample_size)
+# meta_ev_sigmas_1, meta_ev_variances_1, meta_ev_k_values_1, n_gen_1, n_gen_max_1 = study_stiffness_evolution(subfolder_1)
+# opt_k_1 = (0.019235/np.std(parameters_1['spacers']))**2
+# new_df_1 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_1, meta_ev_k_values_1)
+
+
+
+
+
+
+stop = min(n_iter_3, n_iter_7)
+
+meta_ev_sigmas_7 = meta_ev_sigmas_7.iloc[:stop,:]
+meta_ev_k_values_7 = meta_ev_k_values_7.iloc[:stop,:]
+new_df_7 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_7, meta_ev_k_values_7, parameters_7['update_period'])
+
+meta_ev_sigmas_3 = meta_ev_sigmas_3.iloc[:stop,:]
+meta_ev_k_values_3 = meta_ev_k_values_3.iloc[:stop,:]
+new_df_3 = make_df_for_avg_spring_const_plot(meta_ev_sigmas_3, meta_ev_k_values_3, parameters_3['update_period'])
+
+
+# intervals = [10, 25, 50, 95, 100]
+# intervals = [25, 50, 75, 95]
+# intervals = [50, 75, 100]
+intervals = [50, 75]
+
+yaxis_scale = 'log'
+yaxis_scale = 'linear'
+
+xaxis_lim = min(n_gen_max_3, n_gen_max_7)
+
+# kappa_opt lines
+# plot.axhline(y=opt_k_7, linestyle='dashed', color='C0', label=r'$\kappa_{opt}^{(1)}$', zorder=1)
+# plot.axhline(y=opt_k_3, linestyle='dashed', color='C1', label=r'$\kappa_{opt}^{(2)}$', zorder=2)
+
+# 7 val hist
+#   * mid 50% of the data
+plot = sns.lineplot(data=new_df_7, x='iter', y='k estimates', estimator=np.median,
+             color="C0", errorbar=('ci', 50), label=r'Simulations using $D_{1}$', zorder=3)
+# plot = sns.lineplot(data=new_df_7, x='iter', y='k estimates', estimator=np.median,
+#              color="C0", errorbar=('ci', 50), label=r'$\kappa^{(1)}$')
+#   * mid 75% of the data
+plot = sns.lineplot(data=new_df_7, x='iter', y='k estimates', estimator=np.median,
+             color="C0", errorbar=('ci', 75), zorder=4)
+plt.yscale(yaxis_scale)
+plot.axhline(y=opt_k_7, linestyle='dashed', color='C0', label=r'$\kappa_{opt}^{(1)}$', zorder=1)
+
+
+# # 5 val hist
+# for interval in intervals:
+#     plot = sns.lineplot(data=new_df_5, x='iter', y='k estimates', estimator=np.median,
+#                         color="C0", errorbar=('ci', interval))
+# # plot.set(ylim=(0, max(new_df['k estimates'])))
+# ###plot.set(ylim=(0, 0.005))
+# plt.yscale(yaxis_scale)
+# plot.axhline(y=opt_k_5, linestyle='dashed', color='C0')
+
+# 3 val hist
+#   * mid 50% of the data
+plot = sns.lineplot(data=new_df_3, x='iter', y='k estimates', estimator=np.median,
+             color="C1", errorbar=('ci', 50), label=r'Simulations using $D_{2}$', zorder=5)
+# plot = sns.lineplot(data=new_df_3, x='iter', y='k estimates', estimator=np.median,
+#              color="C1", errorbar=('ci', 50), label=r'$\kappa^{(2)}$')
+#   * mid 75% of the data
+plot = sns.lineplot(data=new_df_3, x='iter', y='k estimates', estimator=np.median,
+             color="C1", errorbar=('ci', 75), zorder=6)
+plt.yscale(yaxis_scale)
+plot.axhline(y=opt_k_3, linestyle='dashed', color='C1', label=r'$\kappa_{opt}^{(2)}$', zorder=2)
+
+
+# # 1 val hist
+# for interval in intervals:
+#     plot = sns.lineplot(data=new_df_1, x='iter', y='k estimates', estimator=np.median,
+#                         color="C2", errorbar=('ci', interval))
+# # plot.set(ylim=(0, max(new_df['k estimates'])))
+# ###plot.set(ylim=(0, 0.005))
+# plt.yscale(yaxis_scale)
+# plot.axhline(y=opt_k_1, linestyle='dashed', color='C2')
+
+plot.set(ylim=(-0.0005, 0.005))
+plt.ylabel(r'$\kappa$ (N/m)')
+plt.xlabel('Generation')
+plt.legend()
+figure_filepath = results_dir + 'Spring_Constant_Evo_Figure.png'
+plt.savefig(figure_filepath, dpi=600)
+plt.close()
+print('Plot saved as: ' + figure_filepath)
+
+# Now plot the histograms for the two spacer size distributions
+# ---------------------------------------------------------
+
+spacers_7 = parameters_7['spacers']
+spacers_7_unique = list(set(spacers_7))
+spacers_7_unique.sort()
+
+spacers_3 = parameters_3['spacers']
+spacers_3_unique = list(set(spacers_3))
+spacers_3_unique.sort()
+
+x_min = min(min(spacers_7_unique), min(spacers_3_unique))
+x_max = max(max(spacers_7_unique), max(spacers_3_unique))
+x_axis = list(range(x_min, x_max+1))
+
+y_7 = []
+y_3 = []
+for spacer_size in x_axis:
+    y_7.append(spacers_7.count(spacer_size))
+    y_3.append(spacers_3.count(spacer_size))
+
+y_max = max(max(y_7), max(y_3))
+
+labels_fontsize = 42
+ticks_fontsize = 28
+
+# Plot 7 vals hist
+plt.bar(x_axis, y_7, width=1, color='#1f77b4', edgecolor='black')
+plt.title(r'$D_{1}$', fontsize=labels_fontsize)
+plt.xlabel('Spacer size (bp)', fontsize=labels_fontsize)
+plt.ylabel('# targets', fontsize=labels_fontsize)
+plt.xticks(fontsize=ticks_fontsize)
+plt.yticks(fontsize=ticks_fontsize)
+plt.ylim((0,y_max+0.5))
+figure_filepath = results_dir + 'Hist_for_D1.png'
+plt.savefig(figure_filepath, bbox_inches="tight", dpi=300)
+plt.close()
+
+# Plot 3 vals hist
+plt.bar(x_axis, y_3, width=1, color='#ff7f0e', edgecolor='black')
+plt.title(r'$D_{2}$', fontsize=labels_fontsize)
+plt.xlabel('Spacer size (bp)', fontsize=labels_fontsize)
+plt.ylabel('# targets', fontsize=labels_fontsize)
+plt.xticks(fontsize=ticks_fontsize)
+plt.yticks(fontsize=ticks_fontsize)
+plt.ylim((0,y_max+0.5))
+figure_filepath = results_dir + 'Hist_for_D2.png'
+plt.savefig(figure_filepath, bbox_inches="tight", dpi=300)
+plt.close()
 
 
 
