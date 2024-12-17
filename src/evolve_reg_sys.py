@@ -419,11 +419,6 @@ def main():
 
 if __name__ == '__main__':
     
-    '''
-    # Start a new run as soon as the previous one is done, until the process is killed
-    while True:
-        main()
-    '''
     main()
 
 
