@@ -227,7 +227,7 @@ def main():
     
     # SET UP
     
-    config_filename = 'config.json'
+    config_filename = 'settings.json'
     config_dict = read_json_file(config_filename)
     check_settings(config_dict)
     

@@ -16,7 +16,6 @@ def entropy(counts):
             H -= (c/n) * np.log2(c/n)
     return H
 
-
 def expected_entropy(n, base_probabilities=[0.25, 0.25, 0.25, 0.25]):
     '''
     Computes the Expected value of the entropy for a random collection of `n`
@@ -98,13 +97,9 @@ def expected_entropy(n, base_probabilities=[0.25, 0.25, 0.25, 0.25]):
     return E
 
 
-
-
 # ===============================================================
 # Expected value of Entropy for Discrete Uniform Sample of size n
 # ===============================================================
-
-
 
 def append_partitions(out_list, n, *rest):
     '''
@@ -116,7 +111,6 @@ def append_partitions(out_list, n, *rest):
     max = n // 2
     for i in range(min, max+1):
         append_partitions(out_list, n-i, i, *rest)
-
 
 def count_distributions(partition, N_bins):
     '''
@@ -156,7 +150,6 @@ def count_distributions(partition, N_bins):
             den *= math.factorial(partition.count(count_val))
     return int(num/den)
 
-
 def prob_of_distribution(distribution, N_bins):
     '''
     Probability of obtaining the exact list of counts as in `distribution`,
@@ -167,7 +160,6 @@ def prob_of_distribution(distribution, N_bins):
     bin_probs = [1/N_bins] * N_bins  # Discrete uniform over the bins
     return multinomial.pmf(distribution, n=sum(distribution), p=bin_probs)
     
-
 def prob_of_partition(partition, N_bins):
     '''
     Returns the probability that T elements will fall into bins in a way that
@@ -183,7 +175,6 @@ def prob_of_partition(partition, N_bins):
         one bin will contain one element, and the remaining bins will be empty.
     '''
     return count_distributions(partition, N_bins) * prob_of_distribution(partition, N_bins)
-
 
 def exp_entropy(n, N_bins):
     '''
@@ -208,21 +199,6 @@ def exp_entropy(n, N_bins):
 
 
 
-
-
-# def binom_coefficients(m):
-#     coefficients = []
-#     c = 1
-#     for x in range(m + 1):
-#         # B(m, x) is 1 if either m or x is 0.
-#         if m != 0 and x != 0:
-#             c = c * (m - x + 1) / x
-#         coefficients.append(int(c))
-#     return coefficients
-
-
-
-#exp_entropy(16,50)
 
 
 
