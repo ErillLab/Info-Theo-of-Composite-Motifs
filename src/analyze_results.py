@@ -746,7 +746,7 @@ def plot_comp_exp(experiment_dirpath, variable_spcr='flex'):
 # ================================================
 
 # Reproduce (Schneider 2000)
-results_path = '../results/20241018161731_Reproduce_Schneider'
+results_path = '../results/Reproduce_Schneider_2000'
 plot_Rsequence_Ev(results_path, labelsfontsize=14)
 
 
