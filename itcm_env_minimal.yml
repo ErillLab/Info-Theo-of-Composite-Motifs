@@ -1,0 +1,14 @@
+name: itcm
+channels:
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+  - https://repo.anaconda.com/pkgs/msys2
+dependencies:
+  - anaconda::biopython
+  - anaconda::pandas
+  - conda-forge::numpy
+  - scipy
+  - anaconda::scikit-learn
+  - conda-forge::matplotlib
+  - anaconda::seaborn
+  - anaconda::jupyter
