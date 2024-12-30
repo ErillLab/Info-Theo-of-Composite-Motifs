@@ -1,12 +1,12 @@
 # Information Theory of Composite Motifs
 
-Computational simulations in support of our work on the information theory of composite motifs
+Computational simulations in support of our work on the information theory of composite motifs [(Mascolo & Erill, 2024)](https://doi.org/10.1101/2024.11.11.623117)
 
 ## Installation
 
-The dependencies are listed in the `ITCM_env.yml` file. Conda users can create a specific environment with
+The dependencies are listed in the `itcm_env_complete.yml` file. Conda users can create a specific environment with
 
-	conda env create -f ITCM_env.yml
+	conda env create -f itcm_env_complete.yml
 
 ## Usage
 
