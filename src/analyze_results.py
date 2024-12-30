@@ -173,7 +173,7 @@ def process_data(resultsdir, sample_size=None, ic_correction='true_Rseq'):
         if len(os.listdir(resultsdir + f)) == 0:
             print('Removing empty subfolder:', f)
             os.rmdir(resultsdir + f)
-        # Remove incomplete subfolders
+        # Warn about incomplete subfolders
         else:
             contains_latest_sol = False
             for fname in os.listdir(resultsdir + f):
@@ -220,7 +220,6 @@ def process_data(resultsdir, sample_size=None, ic_correction='true_Rseq'):
         if len(sol_df_list) != 2:
             warnings.warn('There should be a "sol_first_*" and a "sol_latest_*".')
             continue
-            ###raise ValueError('There should be a "sol_first_*" and a "sol_latest_*".')
         initial.append(parse_report(resultsdir + folder + '/' + sol_df_list[0]))
         drifted.append(parse_report(resultsdir + folder + '/' + sol_df_list[1]))
         
@@ -309,6 +308,7 @@ def study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size=None,
         filename = 'Study_Spacer_Barplot_ALL.png'
     figure_filepath = results_dir + filename
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     plt.savefig(figure_filepath, bbox_inches="tight", dpi=600)
     plt.close()
     print('Plot saved to: ' + figure_filepath)
@@ -377,6 +377,7 @@ def plot_Rsequence_Ev(results_path, labelsfontsize=10):
     # Save line plot as PNG file
     figure_filepath = results_path + '/Rsequence_evolution.png'
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     plt.savefig(figure_filepath, bbox_inches="tight", dpi=600)
     plt.close()
     print('Plot saved to: ' + figure_filepath)
@@ -436,6 +437,7 @@ def map_dyads_to_2D_plot(drifted_df_list, parameters, sample_size=None, results_
     # Save plot
     figure_filepath = results_dir + '2D_plot_with_sim_data.png'
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     plt.savefig(figure_filepath, bbox_inches='tight', dpi=600)
     plt.close()
     print('Plot saved to: ' + figure_filepath)
@@ -607,6 +609,7 @@ def spring_const_plot(df_1, df_2, opt_k_1, opt_k_2, results_dir='', tag=None):
         figure_filename = 'Spring_Constant_Evo_Figure.png'
     figure_filepath = results_dir + figure_filename
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     plt.savefig(figure_filepath, dpi=600)
     plt.close()
     print('Plot saved to: ' + figure_filepath)
@@ -632,6 +635,7 @@ def plot_D_histogram(x_axis, y, results_dir='', tag='', color='#1f77b4', y_max=N
     plt.ylim((0,y_max+0.5))
     figure_filepath = results_dir + 'Hist_for_D{}.png'.format(tag)
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     plt.savefig(figure_filepath, bbox_inches="tight", dpi=300)
     plt.close()
     print('D histogram saved as: ' + figure_filepath)
@@ -736,134 +740,152 @@ def plot_comp_exp(experiment_dirpath, variable_spcr='flex'):
     ### figure_filepath = experiment_dirpath + figure_filename
     figure_filepath = os.path.join(experiment_dirpath, figure_filename)
     figure_filepath = unique_filepath(figure_filepath)
+    plt.show()
     fig.savefig(figure_filepath, dpi=300)
     plt.close()
     print('Plot saved to: ' + figure_filepath)
 
 
-# ================================================
-# Plot for n=1 case, to reproduce (Schneider 2000)
-# ================================================
-
-# Reproduce (Schneider 2000)
-results_path = '../results/Reproduce_Schneider_2000'
-plot_Rsequence_Ev(results_path, labelsfontsize=14)
-
-
-# ===========================================
-# Plots for n=2 case, to study dyad evolution
-# ===========================================
-
-# results_dir = '../../RESULTS/Study_Spacer_New_Repr_Renamed3/'
-results_dir = '../results/Test_Rsequence_plus_Rspacer/'
-sample_size = 20
-
-# Prepare data
-drifted_df_list = []
-for subfolder in os.listdir(results_dir):
-    if not os.path.isdir(results_dir + subfolder):
-        continue
+def reproduce_all_figures():
+    '''
+    Code to serially regenerate all the Figures in our paper:
+        "Information Theory of Composite Sequence Motifs" (Mascolo & Erill)
+    '''
+    
+    # ================================================
+    # Plot for n=1 case, to reproduce (Schneider 2000)
+    # ================================================
+    
+    # Reproduce (Schneider 2000)
+    results_path = '../results/Reproduce_Schneider_2000'
+    plot_Rsequence_Ev(results_path, labelsfontsize=14)
+    
+    
+    # ===========================================
+    # Plots for n=2 case, to study dyad evolution
+    # ===========================================
+    
+    # results_dir = '../../RESULTS/Study_Spacer_New_Repr_Renamed3/'
+    results_dir = '../results/Test_Rsequence_plus_Rspacer/'
+    sample_size = 20
+    
+    # Prepare data
+    drifted_df_list = []
+    for subfolder in os.listdir(results_dir):
+        if not os.path.isdir(results_dir + subfolder):
+            continue
+        initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
+        drifted_df_list.append(drifted_df)
+    
+    # Stacked Barplot
+    study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size, results_dir, spacer_weep=True, labelsfontsize=10)
+    
+    # 2D plot
+    map_dyads_to_2D_plot(drifted_df_list, parameters, sample_size, results_dir, labelsfontsize=10)
+    
+    # ====================
+    # Supplementary Figure
+    # ====================
+    
+    # results_dir = '../../RESULTS/AUPRC_fitness/'
+    results_dir = '../results/Test_Rsequence_plus_Rspacer_Gaussian_Conn/'
+    
+    # (A) PANEL
+    subfolder = 'Gauss_9sites'
+    sample_size = None
+    
+    # Prepare data
     initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
-    drifted_df_list.append(drifted_df)
-
-# Stacked Barplot
-study_spacer_stacked_barplot(drifted_df_list, parameters, sample_size, results_dir, spacer_weep=True, labelsfontsize=10)
-
-# 2D plot
-map_dyads_to_2D_plot(drifted_df_list, parameters, sample_size, results_dir, labelsfontsize=10)
-
-# ====================
-# Supplementary Figure
-# ====================
-
-# results_dir = '../../RESULTS/AUPRC_fitness/'
-results_dir = '../results/Test_Rsequence_plus_Rspacer_Gaussian_Conn/'
-
-# (A) PANEL
-subfolder = 'Gauss_9sites'
-sample_size = None
-
-# Prepare data
-initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
-
-# Stacked Barplot
-study_spacer_stacked_barplot([drifted_df], parameters, sample_size, results_dir + subfolder + '/')
-
-# Plot spacer distribution as histogram
-spacers = parameters['spacers']
-spacers_unique = list(set(spacers))
-spacers_unique.sort()
-counts = [spacers.count(d) for d in spacers_unique]
-plot_D_histogram(spacers_unique, counts, results_dir + subfolder + '/', y_max=6)
-
-# (B) PANEL
-subfolder = 'Gauss_16sites'
-sample_size = None
-
-# Prepare data
-initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
-
-# Stacked Barplot
-study_spacer_stacked_barplot([drifted_df], parameters, sample_size, results_dir + subfolder + '/')
-
-# Plot spacer distribution as histogram
-spacers = parameters['spacers']
-spacers_unique = list(set(spacers))
-spacers_unique.sort()
-counts = [spacers.count(d) for d in spacers_unique]
-plot_D_histogram(spacers_unique, counts, results_dir + subfolder + '/', y_max=6)
-
-
-# ===================================
-# Figure on spring constant evolution
-# ===================================
-
-# results_dir = '../../RESULTS/For_New_Spring_Const_Evo/'
-results_dir = '../results/Spring_Constant_Evo/'
-sample_size = None
-
-# Two experiments
-exp_1 = 'seven_vals_histogram'
-exp_2 = 'three_vals_histogram'
-
-# MAX_N_RUNS = None
-MAX_N_RUNS = 25
-
-# THRSH: Missing value tolerance (some runs stopped earlier and don't have
-# values for late generations)
-THRSH = 10
-
-df_1, opt_k_1, params_1 = prepare_spring_const_data(results_dir + exp_1, THRSH, MAX_N_RUNS)
-df_2, opt_k_2, params_2 = prepare_spring_const_data(results_dir + exp_2, THRSH, MAX_N_RUNS)
-
-# Trim dataframes
-stop_gen = min(df_2['iter'].max(), df_1['iter'].max())
-df_1 = df_1.loc[df_1['iter'] <= stop_gen]
-df_2 = df_2.loc[df_2['iter'] <= stop_gen]
-
-# Make line plots with shaded areas
-spring_const_plot(df_1, df_2, opt_k_1, opt_k_2, results_dir, MAX_N_RUNS)
-
-# Plot the histograms for the two spacer size distributions (D1 and D2)
-plot_D1_D2_histograms(params_1, params_2, results_dir)
-
-
-# ==================================
-# Figure for competition experiments
-# ==================================
-
-# Figure for paper: Stiff VS Flexible
-experiment_dirpath = '../results/Competition_Experiments/Stiff_VS_Flex_indel_1bp/'
-plot_comp_exp(experiment_dirpath)
-
-# Extra Figure (not in paper): Stiff VS Medium
-experiment_dirpath = '../results/Competition_Experiments/Stiff_VS_Med_indel_1bp/'
-plot_comp_exp(experiment_dirpath, variable_spcr='medium')
+    
+    # Stacked Barplot
+    study_spacer_stacked_barplot([drifted_df], parameters, sample_size, results_dir + subfolder + '/')
+    
+    # Plot spacer distribution as histogram
+    spacers = parameters['spacers']
+    spacers_unique = list(set(spacers))
+    spacers_unique.sort()
+    counts = [spacers.count(d) for d in spacers_unique]
+    plot_D_histogram(spacers_unique, counts, results_dir + subfolder + '/', y_max=6)
+    
+    # (B) PANEL
+    subfolder = 'Gauss_16sites'
+    sample_size = None
+    
+    # Prepare data
+    initial_df, drifted_df, all_ev, parameters = process_data(results_dir + subfolder + '/', sample_size)
+    
+    # Stacked Barplot
+    study_spacer_stacked_barplot([drifted_df], parameters, sample_size, results_dir + subfolder + '/')
+    
+    # Plot spacer distribution as histogram
+    spacers = parameters['spacers']
+    spacers_unique = list(set(spacers))
+    spacers_unique.sort()
+    counts = [spacers.count(d) for d in spacers_unique]
+    plot_D_histogram(spacers_unique, counts, results_dir + subfolder + '/', y_max=6)
+    
+    
+    # ===================================
+    # Figure on spring constant evolution
+    # ===================================
+    
+    # results_dir = '../../RESULTS/For_New_Spring_Const_Evo/'
+    results_dir = '../results/Spring_Constant_Evo/'
+    sample_size = None
+    
+    # Two experiments
+    exp_1 = 'seven_vals_histogram'
+    exp_2 = 'three_vals_histogram'
+    
+    # MAX_N_RUNS = None
+    MAX_N_RUNS = 25
+    
+    # THRSH: Missing value tolerance (some runs stopped earlier and don't have
+    # values for late generations)
+    THRSH = 10
+    
+    df_1, opt_k_1, params_1 = prepare_spring_const_data(results_dir + exp_1, THRSH, MAX_N_RUNS)
+    df_2, opt_k_2, params_2 = prepare_spring_const_data(results_dir + exp_2, THRSH, MAX_N_RUNS)
+    
+    # Trim dataframes
+    stop_gen = min(df_2['iter'].max(), df_1['iter'].max())
+    df_1 = df_1.loc[df_1['iter'] <= stop_gen]
+    df_2 = df_2.loc[df_2['iter'] <= stop_gen]
+    
+    # Make line plots with shaded areas
+    spring_const_plot(df_1, df_2, opt_k_1, opt_k_2, results_dir, MAX_N_RUNS)
+    
+    # Plot the histograms for the two spacer size distributions (D1 and D2)
+    plot_D1_D2_histograms(params_1, params_2, results_dir)
+    
+    
+    # ==================================
+    # Figure for competition experiments
+    # ==================================
+    
+    # Figure for paper: Stiff VS Flexible
+    experiment_dirpath = '../results/Competition_Experiments/Stiff_VS_Flex_indel_1bp/'
+    plot_comp_exp(experiment_dirpath)
+    
+    # Extra Figure (not in paper): Stiff VS Medium
+    experiment_dirpath = '../results/Competition_Experiments/Stiff_VS_Med_indel_1bp/'
+    plot_comp_exp(experiment_dirpath, variable_spcr='medium')
+    
+    # =====
+    # Done!
+    # =====
+    
+    print('\n\nDone! All figures were generated and saved as PNG files.')
 
 
 
+# -----------------------------------------------------------------------------
 
+# To run this code as a script
+if __name__ == 'main':
+    reproduce_all_figures()
 
+# -----------------------------------------------------------------------------
 
 
 
