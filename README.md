@@ -11,7 +11,7 @@ Computational simulations in support of our work on the information theory of co
 
 2. Install Python requirements
    
-   The dependencies are listed in the `itcm_env_complete.yml` file.
+   The dependencies are listed in the `itcm_env_minimal.yml` file.
 
    Conda users can create a ready-to-use environment with
    ```sh
