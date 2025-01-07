@@ -13,7 +13,7 @@ Computational simulations in support of our work on the information theory of co
    
    The dependencies are listed in the `itcm_env_minimal.yml` file.
 
-   Conda users can create a ready-to-use environment with
+   [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html) users can create a ready-to-use environment with
    ```sh
    conda env create -f itcm_env_complete.yml
    ```
