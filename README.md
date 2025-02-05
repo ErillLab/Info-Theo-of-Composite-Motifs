@@ -28,11 +28,11 @@ The settings can be chosen by editing the `settings.json` file.
 
 ### Reproduce the figures in our pre-print
 
-#### Gather data
+#### Step 1: Gather data
 
 The results of all our *in silico* experiments can be obtained by unzipping the `results.zip` folder.
 
-#### Analyze data
+#### Step 2: Analyze data
 
 The data can be analyzed to regenerate all the Figures in [Mascolo & Erill (2024)](https://doi.org/10.1101/2024.11.11.623117). They will be saved as PNG files.
 
